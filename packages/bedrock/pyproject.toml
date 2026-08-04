@@ -1,6 +1,6 @@
 [project]
 name = "bedrock-core"
-version = "0.1.2"
+version = "0.2.0"
 description = "A modular Python application framework with manifest-driven module loading, lifecycle management, and contrib modules."
 readme = "README.md"
 license = "MIT"
@@ -22,13 +22,16 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.4",
     "asgiref>=3.8.1",
+    "click>=8.3.3",
     "loguru>=0.7.0",
     "orjson>=3.11.8",
     "pydantic>=2.12.5",
-    "pydantic-settings>=2.13.1",
+    "pydantic-settings>=2.14.2",
     "pyyaml>=6.0.2",
     "sqlalchemy>=2.0.49",
-    "typer>=0.24.1",
+    # bedrock.cli subclasses TyperGroup and uses click APIs directly;
+    # typer 0.27 vendored click, so cap until the CLI is migrated.
+    "typer>=0.24.1,<0.27",
 ]
 
 [project.urls]

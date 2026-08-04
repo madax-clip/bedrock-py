@@ -46,6 +46,32 @@ jobs:
               - 'uv.lock'
               - '.github/workflows/**'
 
+  dependency-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Decision: CI fails on any known vulnerability in the locked runtime
+      # dependency set. An exception requires a documented
+      # `--ignore-vuln <ID>` here plus a note in SECURITY.md explaining why
+      # the advisory does not apply.
+      - name: pip-audit locked runtime dependencies
+        run: |
+          uv export --locked --all-packages --no-dev --no-emit-project \
+            | grep -vE '^\s*(#|$)' | grep -vE '^-e \./' > /tmp/ci-reqs.txt
+          uvx pip-audit --disable-pip -r /tmp/ci-reqs.txt
+
   lint-python:
     name: Lint (Python)
     runs-on: ubuntu-latest

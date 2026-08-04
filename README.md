@@ -6,7 +6,7 @@ Framework-agnostic core — no HTTP dependency in the runtime.
 
 ## Status
 
-**Early-stage (0.1.0).** The core runtime works and is under active development, but APIs may change.
+**Early-stage (0.2.0).** The core runtime works and is under active development, but APIs may change.
 
 What exists today:
 
@@ -61,8 +61,8 @@ This repository is a `uv` workspace:
 
 ```
 packages/
-├── bedrock/           # Core runtime
-└──bedrock-cli/       # Scaffolding CLI (early, 0.0.1)
+├── bedrock/           # Core runtime (bedrock-core)
+└──bedrock-cli/       # Scaffolding CLI (bedrock-cli)
 ```
 
 ## Core runtime (`packages/bedrock`)

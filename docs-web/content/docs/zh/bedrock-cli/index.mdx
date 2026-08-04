@@ -7,14 +7,18 @@ description: 用于 Bedrock 应用的项目脚手架与代码生成 CLI
 
 ## 安装
 
-<Callout type="info">
-  `bedrock-cli` 目前仅支持从 GitHub 安装。PyPI 发布尚在计划中。
-</Callout>
+自 0.2.0 起，`bedrock-cli` 已发布到 PyPI，可像普通 Python 包一样安装：
 
 <Tabs items={['uv', 'pip']}>
-  <Tab value="uv"><CodeBlock code={'uv add "bedrock-cli @ git+https://github.com/maacck/bedrock-py#subdirectory=packages/bedrock-cli"'} lang={'bash'} /></Tab>
-  <Tab value="pip"><CodeBlock code={'pip install "git+https://github.com/maacck/bedrock-py#subdirectory=packages/bedrock-cli"'} lang={'bash'} /></Tab>
+  <Tab value="uv"><CodeBlock code={'uv tool install bedrock-cli'} lang={'bash'} /></Tab>
+  <Tab value="pip"><CodeBlock code={'pip install bedrock-cli'} lang={'bash'} /></Tab>
 </Tabs>
+
+查看已安装版本（读取自包的分发元数据）：
+
+```bash
+bedrock-cli --version
+```
 
 CLI 会将自己注册为 `bedrock-cli` 命令（与运行时的 `bedrock` 命令分开）。
 
@@ -61,7 +65,7 @@ bedrock-cli init <name> [OPTIONS]
 
 ```
 <name>/
-├── pyproject.toml          # uv project with bedrock, fastapi, sqlalchemy, uvicorn
+├── pyproject.toml          # uv 项目，依赖 bedrock-core>=0.2.0
 ├── .python-version         # Pins Python 3.12
 ├── README.md               # Setup and run instructions
 └── src/<package>/

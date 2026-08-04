@@ -41,6 +41,15 @@ uv run pytest packages/bedrock/tests/
 # Docs
 cd starlight-docs && npm run dev    # Dev server with live sync
 cd starlight-docs && npm run build  # Production build
+
+# Release (tag-driven, publishes both packages)
+uv build --all-packages
+git tag vX.Y.Z && git push origin vX.Y.Z  # tag must match both package versions
+
+# Dependency vulnerability audit (same gate as CI/release)
+uv export --locked --all-packages --no-dev --no-emit-project \
+  | grep -vE '^\s*(#|$)' | grep -vE '^-e \./' > /tmp/reqs.txt
+uvx pip-audit --disable-pip -r /tmp/reqs.txt
 ```
 
 ## Architecture
@@ -97,7 +106,8 @@ cd starlight-docs && npm run build  # Production build
 - `bedrock-cli` is planned/future work—current CLI lives in `packages/bedrock/src/bedrock/cli/`
 - Ruff config: `[tool.ruff]` in root `pyproject.toml`
 - Pytest: dev dependency, 4 test files, no conftest.py
-- No CI/CD pipelines, no Docker, no deployment scripts
+- Both packages (`bedrock-core`, `bedrock-cli`) are versioned in lockstep; runtime versions derive from installed distribution metadata, so `pyproject.toml` is the single source of truth
+- Releases are tag-driven (`vX.Y.Z`) via `.github/workflows/release.yml`: tag must match both package versions, non-empty `CHANGELOG.md` section for the tag is required before publish, both wheels are smoke-installed, and locked runtime deps are scanned with `pip-audit` (fail on findings; exceptions need a documented `--ignore-vuln` plus a `SECURITY.md` note)
 
 ## Agent skills
 

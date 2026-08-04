@@ -203,6 +203,17 @@ class TestFeature:
    - Delete your feature branch
    - Pull the latest changes from `dev`
 
+## Release Process (maintainers)
+
+Both packages — `bedrock-core` and `bedrock-cli` — are versioned in lockstep and released together from a single tag.
+
+1. **Bump versions**: set the same version in `packages/bedrock/pyproject.toml` and `packages/bedrock-cli/pyproject.toml`, then run `uv lock`. Runtime versions are read from installed distribution metadata, so the `pyproject.toml` version is the single source of truth.
+2. **Write release notes**: add a `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md` (under Keep a Changelog format). The release fails before publishing if the section for the tag is missing or empty.
+3. **Tag**: push an annotated tag `vX.Y.Z`. The tag must match both package versions exactly or the release workflow aborts before anything is built or published.
+4. **Automated gates**: the release workflow (`release.yml`) then builds both distributions, smoke-installs the fresh wheels (`import bedrock`, `bedrock --help`, `bedrock-cli --help`, and a scaffolded `bedrock-cli init` project resolving `bedrock-core` from the fresh wheel), runs `pip-audit` over the locked runtime dependencies, and only then publishes both packages to PyPI (trusted publishing) and creates a GitHub Release with both sets of artifacts attached.
+
+**Vulnerability scan policy**: CI and the release pipeline fail on any known vulnerability in the locked runtime dependency set. An exception requires a documented `--ignore-vuln <ID>` in the workflow plus a note in `SECURITY.md` explaining why the advisory does not apply.
+
 ## Reporting Issues
 
 ### Bug Reports

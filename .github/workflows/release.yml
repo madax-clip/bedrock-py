@@ -6,8 +6,8 @@ on:
       - "v*.*.*"
 
 jobs:
-  build:
-    name: Build distribution
+  validate:
+    name: Validate tag, versions, and release notes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -23,19 +23,54 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --package bedrock-core --locked
+        run: uv sync --all-packages --locked
 
-      - name: Validate version tag
+      - name: Tag matches both package versions
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(uv run python -c "import importlib.metadata; print(importlib.metadata.version('bedrock-core'))")
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag version ($TAG_VERSION) does not match package version ($PKG_VERSION)"
+          CORE_VERSION=$(uv run python -c "import importlib.metadata; print(importlib.metadata.version('bedrock-core'))")
+          CLI_VERSION=$(uv run python -c "import importlib.metadata; print(importlib.metadata.version('bedrock-cli'))")
+          echo "tag=$TAG_VERSION core=$CORE_VERSION cli=$CLI_VERSION"
+          if [ "$TAG_VERSION" != "$CORE_VERSION" ] || [ "$TAG_VERSION" != "$CLI_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) must match bedrock-core ($CORE_VERSION) and bedrock-cli ($CLI_VERSION)"
             exit 1
           fi
 
-      - name: Build package
-        run: uv build --package bedrock-core
+      - name: Release notes are present and non-empty
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -n "/^## \[$VERSION\]/,/^## \[/p" CHANGELOG.md | sed '1d;$d' > release_notes.md
+          if [ ! -s release_notes.md ] || ! grep -q '[^[:space:]]' release_notes.md; then
+            echo "::error::CHANGELOG.md has no (or empty) release notes section for [$VERSION]. Refusing to publish."
+            exit 1
+          fi
+          cat release_notes.md
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release_notes.md
+
+  build:
+    name: Build both distributions
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build packages
+        run: uv build --all-packages
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
@@ -43,15 +78,84 @@ jobs:
           name: dist
           path: dist/
 
-  publish-pypi:
-    name: Publish to PyPI
+  smoke:
+    name: Fresh-wheel smoke (install, import, CLIs, scaffold)
     runs-on: ubuntu-latest
     needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install both wheels into a clean environment
+        run: |
+          uv venv .smoke-venv
+          uv pip install --python .smoke-venv/bin/python --find-links dist bedrock-core bedrock-cli
+
+      - name: Smoke import and CLI entry points
+        run: |
+          .smoke-venv/bin/python -c "import bedrock"
+          .smoke-venv/bin/bedrock --help > /dev/null
+          .smoke-venv/bin/bedrock --version
+          .smoke-venv/bin/bedrock-cli --help > /dev/null
+          .smoke-venv/bin/bedrock-cli --version
+
+      - name: Smoke scaffold resolves and installs bedrock-core
+        run: |
+          .smoke-venv/bin/bedrock-cli init smoke-app -o /tmp/smoke
+          grep -q '"bedrock-core>=0.2.0"' /tmp/smoke/smoke-app/pyproject.toml
+          cd /tmp/smoke/smoke-app
+          uv venv .app-venv
+          # Resolve the scaffold's bedrock-core requirement against the freshly built wheel.
+          uv pip install --python .app-venv/bin/python --find-links "$OLDPWD/dist" bedrock-core
+          .app-venv/bin/python -c "import bedrock"
+
+  dependency-scan:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Decision: the release fails on any known vulnerability in the locked
+      # runtime dependency set. An exception requires a documented
+      # `--ignore-vuln <ID>` here plus a note in SECURITY.md explaining why
+      # the advisory does not apply.
+      - name: pip-audit locked runtime dependencies
+        run: |
+          uv export --locked --all-packages --no-dev --no-emit-project \
+            | grep -vE '^\s*(#|$)' | grep -vE '^-e \./' > /tmp/release-reqs.txt
+          uvx pip-audit --disable-pip -r /tmp/release-reqs.txt
+
+  publish-pypi:
+    name: Publish both packages to PyPI
+    runs-on: ubuntu-latest
+    needs: [build, smoke, dependency-scan]
     environment:
       name: pypi
       url: https://pypi.org/project/bedrock-core/
     permissions:
-      id-token: write  # Required for trusted publishing
+      id-token: write # Required for trusted publishing (configure for bedrock-core and bedrock-cli)
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v8
@@ -63,7 +167,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   github-release:
-    name: Create GitHub Release
+    name: Create GitHub Release with both distributions
     runs-on: ubuntu-latest
     needs: publish-pypi
     permissions:
@@ -77,12 +181,11 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Extract release notes
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          sed -n "/^## \[$VERSION\]/,/^## \[/p" CHANGELOG.md \
-            | sed '1d;$d' \
-            > release_notes.md
+      - name: Download release notes
+        uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+          path: .
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3

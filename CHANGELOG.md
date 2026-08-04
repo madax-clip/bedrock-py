@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RateLimitDecision` results
 - cli: `bedrock --version` / `-v` now reports the installed `bedrock-core` distribution
   version and exits
+- cli: `bedrock-cli --version` / `-v` reports the installed `bedrock-cli` distribution
+  version and exits; `bedrock_cli.__version__` now derives from distribution metadata
+  instead of a hardcoded string
+
+### Fixed
+
+- packaging: `bedrock-cli init` now scaffolds a dependency on the published
+  `bedrock-core>=0.2.0` distribution instead of the nonexistent `bedrock>=0.1.0`
+- packaging: `bedrock-core` declares its real `click>=8.3.3` dependency and caps
+  `typer<0.27` (0.27 vendored click), so `bedrock --help` works from a fresh wheel
+  install
 
 ### Fixed
 
@@ -34,6 +45,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - docs: the CLI reference now states explicitly that installed modules are trusted
   executable plugins — importing a module executes its code and Bedrock provides no
   sandboxing or passive-import guarantee
+- deps: `click` upgraded to 8.4.2 (PYSEC-2026-2132) and `pydantic-settings` to 2.14.2
+  (GHSA-4xgf-cpjx-pc3j); CI and the release pipeline now run `pip-audit` over the
+  locked runtime dependency set and fail on known vulnerabilities
+
+### Release
+
+- release: `release.yml` now validates that the git tag matches both `bedrock-core`
+  and `bedrock-cli` versions and that the `CHANGELOG.md` section for the tag exists and
+  is non-empty before anything is built or published
+- release: both `bedrock-core` and `bedrock-cli` distributions are built,
+  smoke-tested (fresh-wheel install, `import bedrock`, `bedrock --help`,
+  `bedrock-cli --help`, scaffolded project resolving `bedrock-core`), published to
+  PyPI, and attached to the GitHub Release
+- docs: `SECURITY.md` supported-version table now covers 0.2.x; `CONTRIBUTING.md`
+  documents the dual-package release process and the vulnerability-scan exception policy
 
 ### Fixed
 
