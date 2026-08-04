@@ -1,0 +1,109 @@
+---
+title: Rate Limit
+description: Process-local, thread-safe rolling-window admission decisions with an injectable clock
+---
+
+Bedrock ships a process-local rate limiter under `bedrock.contrib.rate_limit`. It gives application adapters a deterministic admission-decision primitive: thread-safe rolling-window checks with an injectable monotonic clock and immutable results. All state lives in the `RateLimit` instance's memory — there is no persistence, shared store, distributed consistency, HTTP middleware, identity extraction, dynamic policy reload, or global registry. Instantiate a `RateLimit` and pass it where you need it.
+
+## Quick Start
+
+```python
+from bedrock.contrib.rate_limit import RateLimit
+
+rate_limit = RateLimit(limit=5, window=60.0)
+
+decision = rate_limit.check("user:42")
+if decision.allowed:
+    ...  # proceed; decision.remaining slots are left in this window
+else:
+    ...  # deny; retry after decision.retry_after seconds
+```
+
+## Public API
+
+### `RateLimit(limit, window, clock=time.monotonic)`
+
+- `limit: int` — maximum admitted events per key within the window. Must be a positive integer.
+- `window: float` — rolling window length in seconds. Must be positive.
+- `clock: Callable[[], float]` — monotonic time source in seconds. Defaults to `time.monotonic`; inject a fake clock in tests for deterministic behavior.
+
+Invalid `limit` or `window` raises `InvalidRateLimitConfigError`.
+
+### `RateLimit.check(key) -> RateLimitDecision`
+
+Validates a non-empty string `key` (`InvalidRateLimitKeyError` otherwise) and decides admission for one event:
+
+- Uses a rolling window per key: an event at exactly `now - window` is expired.
+- Admits while fewer than `limit` events are live for the key; `remaining` reports the slots left after the decision.
+- When denied, `retry_after` is the exact number of seconds until the oldest live event expires. A denial never consumes a slot.
+- Keys are independent: one key's usage never affects another's.
+
+All methods are thread-safe; concurrent `check` calls never exceed the configured limit.
+
+### `RateLimitDecision`
+
+An immutable (`frozen`) dataclass:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `allowed` | `bool` | Whether the event is admitted |
+| `remaining` | `int` | Slots left for the key after this decision |
+| `retry_after` | `float \| None` | `None` when allowed; non-negative seconds when denied |
+
+### Exceptions
+
+All errors inherit from `BedrockExc`:
+
+- `RateLimitError` — base exception for the package.
+- `InvalidRateLimitConfigError` — non-positive limit or window.
+- `InvalidRateLimitKeyError` — empty or non-string key.
+
+## Deterministic Testing
+
+Inject a controllable clock instead of sleeping:
+
+```python
+from bedrock.contrib.rate_limit import RateLimit
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+    def __call__(self):
+        return self.now
+
+clock = FakeClock()
+rate_limit = RateLimit(limit=1, window=60.0, clock=clock)
+
+assert rate_limit.check("user:1").allowed
+assert not rate_limit.check("user:1").allowed  # denied, retry_after == 60.0
+clock.now += 60.0                              # event expires exactly at now - window
+assert rate_limit.check("user:1").allowed
+```
+
+## Framework Adapter Example
+
+The package is framework-free; adapters decide how to map a denied decision onto their transport. A minimal WSGI-style example:
+
+```python
+from bedrock.contrib.rate_limit import RateLimit
+
+rate_limit = RateLimit(limit=100, window=60.0)
+
+def rate_limited_app(app):
+    def wrapper(environ, start_response):
+        key = environ.get("REMOTE_ADDR", "anonymous")
+        decision = rate_limit.check(key)
+        if not decision.allowed:
+            start_response(
+                "429 Too Many Requests",
+                [("Retry-After", f"{decision.retry_after:.0f}")],
+            )
+            return [b"rate limit exceeded"]
+        return app(environ, start_response)
+
+    return wrapper
+```
+
+## Scope and Non-Goals
+
+`bedrock.contrib.rate_limit` is **process-local**: limits apply per process, per `RateLimit` instance. Multi-process deployments need one instance per process and accept per-process limits, or an external store (out of scope). The package intentionally provides no async API, no persistence or shared backend, no distributed consistency, no HTTP middleware/endpoint, no identity extraction, no dynamic policy reload, and no automatic registration or lifecycle wiring.

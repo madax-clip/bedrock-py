@@ -9,6 +9,7 @@
     "database",
     "cache",
     "metrics",
+    "rate-limit",
     "signals",
     "di",
     "hooks"

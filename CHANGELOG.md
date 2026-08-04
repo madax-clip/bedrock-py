@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - contrib: new `bedrock.contrib.metrics` module with `MetricsRegistry` — minimal in-process,
   thread-safe counters and gauges with immutable, name-sorted `MetricSnapshot` snapshots
+- contrib: new `bedrock.contrib.rate_limit` module with `RateLimit` — process-local,
+  thread-safe rolling-window admission decisions with injectable clock and immutable
+  `RateLimitDecision` results
 
 ### Fixed
 

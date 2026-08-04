@@ -1,0 +1,109 @@
+---
+title: 限流
+description: 进程本地、线程安全的滚动窗口准入决策,支持注入时钟
+---
+
+Bedrock 在 `bedrock.contrib.rate_limit` 下提供进程本地的限流器。它为应用适配层提供确定性的准入决策原语:线程安全的滚动窗口检查、可注入的单调时钟和不可变结果。所有状态只存在于 `RateLimit` 实例的内存中——没有持久化、共享存储、分布式一致性、HTTP 中间件、身份提取、动态策略重载或全局注册表。实例化一个 `RateLimit` 并传递到需要的位置即可。
+
+## 快速开始
+
+```python
+from bedrock.contrib.rate_limit import RateLimit
+
+rate_limit = RateLimit(limit=5, window=60.0)
+
+decision = rate_limit.check("user:42")
+if decision.allowed:
+    ...  # 放行;decision.remaining 为本窗口剩余额度
+else:
+    ...  # 拒绝;decision.retry_after 秒后可重试
+```
+
+## 公共 API
+
+### `RateLimit(limit, window, clock=time.monotonic)`
+
+- `limit: int` —— 窗口内每个 key 允许的最大事件数,必须为正整数。
+- `window: float` —— 滚动窗口长度(秒),必须为正数。
+- `clock: Callable[[], float]` —— 返回秒的单调时钟,默认为 `time.monotonic`;测试中注入假时钟可获得确定性行为。
+
+`limit` 或 `window` 非法时抛出 `InvalidRateLimitConfigError`。
+
+### `RateLimit.check(key) -> RateLimitDecision`
+
+校验非空字符串 `key`(否则抛出 `InvalidRateLimitKeyError`),并对单个事件做出准入决策:
+
+- 每个 key 使用滚动窗口:恰好位于 `now - window` 的事件视为已过期。
+- 当 key 的存活事件少于 `limit` 时放行;`remaining` 为决策后的剩余额度。
+- 被拒绝时,`retry_after` 为最旧存活事件过期前的精确秒数。拒绝不会消耗额度。
+- 各 key 相互独立:一个 key 的用量不影响其他 key。
+
+所有方法均线程安全;并发调用 `check` 永远不会超过配置的限额。
+
+### `RateLimitDecision`
+
+不可变(`frozen`)数据类:
+
+| 字段 | 类型 | 含义 |
+| --- | --- | --- |
+| `allowed` | `bool` | 事件是否被放行 |
+| `remaining` | `int` | 决策后该 key 的剩余额度 |
+| `retry_after` | `float \| None` | 放行时为 `None`;拒绝时为非负秒数 |
+
+### 异常
+
+所有异常均继承自 `BedrockExc`:
+
+- `RateLimitError` —— 本包的基础异常。
+- `InvalidRateLimitConfigError` —— limit 或 window 非正数。
+- `InvalidRateLimitKeyError` —— key 为空或非字符串。
+
+## 确定性测试
+
+注入可控时钟,避免 sleep:
+
+```python
+from bedrock.contrib.rate_limit import RateLimit
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+    def __call__(self):
+        return self.now
+
+clock = FakeClock()
+rate_limit = RateLimit(limit=1, window=60.0, clock=clock)
+
+assert rate_limit.check("user:1").allowed
+assert not rate_limit.check("user:1").allowed  # 拒绝,retry_after == 60.0
+clock.now += 60.0                              # 事件恰好在 now - window 处过期
+assert rate_limit.check("user:1").allowed
+```
+
+## 框架适配示例
+
+本包不依赖任何框架;由适配层决定如何将被拒绝的决策映射到传输层。一个极简的 WSGI 风格示例:
+
+```python
+from bedrock.contrib.rate_limit import RateLimit
+
+rate_limit = RateLimit(limit=100, window=60.0)
+
+def rate_limited_app(app):
+    def wrapper(environ, start_response):
+        key = environ.get("REMOTE_ADDR", "anonymous")
+        decision = rate_limit.check(key)
+        if not decision.allowed:
+            start_response(
+                "429 Too Many Requests",
+                [("Retry-After", f"{decision.retry_after:.0f}")],
+            )
+            return [b"rate limit exceeded"]
+        return app(environ, start_response)
+
+    return wrapper
+```
+
+## 范围与非目标
+
+`bedrock.contrib.rate_limit` 是**进程本地**的:限额按进程、按 `RateLimit` 实例生效。多进程部署需要每个进程一个实例并接受按进程计的限制,或使用外部存储(超出范围)。本包刻意不提供异步 API、持久化或共享后端、分布式一致性、HTTP 中间件/端点、身份提取、动态策略重载,以及自动注册或生命周期装配。
