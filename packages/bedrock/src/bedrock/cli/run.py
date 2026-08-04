@@ -1,5 +1,3 @@
-import sys
-
 import click
 import typer
 from click import Context
@@ -7,31 +5,22 @@ from typer.core import TyperGroup
 
 from bedrock.settings import settings
 
-_APP_LOAD_STATES: dict[str, object] = {"loaded": False}
-_PENDING_APP_NAME: str | None = None
-
-
-def _parse_args_for_app(args: list[str]) -> str | None:
-    """Return the value of ``--app`` / ``-a`` from a raw argument list."""
-    for i, arg in enumerate(args):
-        if arg in ("--app", "-a") and i + 1 < len(args):
-            return args[i + 1]
-        if arg.startswith("--app="):
-            return arg.split("=", 1)[1]
-        if arg.startswith("-a="):
-            return arg.split("=", 1)[1]
-    return None
-
 
 def _parse_run_args_for_app(argv: list[str]) -> str | None:
-    """Scan *argv* for the app name that appears after ``run``.
+    """Scan *argv* for the module import path passed after ``run``.
 
-    Supports both positional style (``bedrock run my_app my_command``) and
-    flag style (``bedrock run --app my_app my_command``). Explicit flags
-    take precedence over positional arguments.
+    The ``run`` command contract is flag-only: ``--app MODULE`` (or ``-a
+    MODULE``) selects the module to load. Explicit flags take precedence over
+    the ``BEDROCK_APP`` environment variable. Positional tokens are module
+    commands or command arguments and are never interpreted as module names.
+
+    Args:
+        argv: Raw argument list (typically ``sys.argv[1:]``).
+
+    Returns:
+        The module import path from ``--app`` / ``-a``, or ``None``.
     """
     run_seen = False
-    positional_app: str | None = None
     for i, arg in enumerate(argv):
         if arg == "run":
             run_seen = True
@@ -43,13 +32,70 @@ def _parse_run_args_for_app(argv: list[str]) -> str | None:
                 return arg.split("=", 1)[1]
             if arg.startswith("-a="):
                 return arg.split("=", 1)[1]
-            if positional_app is None and not arg.startswith("-"):
-                positional_app = arg
-    return positional_app
+    return None
+
+
+def _resolve_run_app(args: list[str]) -> str | None:
+    """Return the module to load for ``run`` from raw args or ``BEDROCK_APP``.
+
+    Args:
+        args: Raw argument list that follows the ``run`` command.
+
+    Returns:
+        The module import path selected by ``--app`` / ``-a``, falling back
+        to the ``BEDROCK_APP`` environment variable, or ``None``.
+    """
+    app = _parse_run_args_for_app(list(args))
+    if app:
+        return app
+    return settings.APP or None
 
 
 class _AppCommandGroup(TyperGroup):
-    """Click group that lazily loads app Typer subcommands before resolution."""
+    """Click group that lazily loads app Typer subcommands before resolution.
+
+    Each loaded module's declared Typer app is mounted under its module name,
+    so ``bedrock run --app MODULE MODULE COMMAND`` invokes the module command.
+    Module names are unique registry keys, so module command groups can never
+    collide with each other; only collisions with built-in ``run`` commands
+    are possible, and those are resolved deterministically in favor of the
+    built-in command with a warning on stderr.
+    """
+
+    def _load_app_commands(self, app_name: str) -> None:
+        from bedrock.module import apps
+
+        apps.populate([app_name])
+
+        for app_instance in apps.all():
+            commands_app = app_instance.commands()
+            if commands_app is None:
+                continue
+            # Wrap in a parent Typer so get_command returns a Group containing
+            # the app as a subcommand.
+            parent = typer.Typer()
+            parent.add_typer(commands_app, name=app_instance.name)
+            parent_cmd = typer.main.get_command(parent)
+            if not (hasattr(parent_cmd, "commands") and app_instance.name in parent_cmd.commands):
+                continue
+            if app_instance.name in self.commands:
+                click.echo(
+                    f"Warning: module '{app_instance.name}' conflicts with a built-in 'run' command; "
+                    "the built-in command takes precedence. "
+                    "Module names must not shadow built-in commands.",
+                    err=True,
+                )
+                continue
+            self.commands[app_instance.name] = parent_cmd.commands[app_instance.name]
+
+    def _ensure_app_commands(self, ctx: Context) -> None:
+        """Load the selected app's commands exactly once for this invocation."""
+        app = ctx.params.get("app")
+        if not isinstance(app, str) or not app:
+            app = _resolve_run_app(getattr(ctx, "args", None) or [])
+        if app and not getattr(self, "_bedrock_commands_loaded", False):
+            self._load_app_commands(app)
+            self._bedrock_commands_loaded = True
 
     def make_context(
         self,
@@ -58,96 +104,36 @@ class _AppCommandGroup(TyperGroup):
         parent: Context | None = None,
         **extra: object,
     ) -> Context:
-        global _PENDING_APP_NAME
-        app = _parse_args_for_app(args) or _PENDING_APP_NAME or settings.APP
-        if app and not _APP_LOAD_STATES.get("loaded"):
-            self._load_app_commands(app)
-
-        ctx = super().make_context(info_name, args, parent, **extra)
-        ctx._raw_args = list(args)
-        return ctx
-
-    def _load_app_commands(self, app_name: str):
-        from bedrock.module import apps
-
-        apps.populate([app_name])
-
-        for app_instance in apps.all():
-            commands = app_instance.commands()
-            if commands is not None:
-                # Wrap in a parent Typer so get_command returns a Group containing the app as a subcommand
-                parent = typer.Typer()
-                parent.add_typer(commands, name=app_instance.name)
-                parent_cmd = typer.main.get_command(parent)
-                # Extract the app subcommand from the parent
-                if hasattr(parent_cmd, "commands") and app_instance.name in parent_cmd.commands:
-                    self.commands[app_instance.name] = parent_cmd.commands[app_instance.name]
-
-        _APP_LOAD_STATES["loaded"] = True
-
-    def format_help(self, ctx: Context, formatter: click.HelpFormatter):
-        if not _APP_LOAD_STATES.get("loaded"):
-            global _PENDING_APP_NAME
-            app = ctx.params.get("app")
-            if not app:
-                raw_args: list[str] = getattr(ctx, "_raw_args", [])
-                app = _parse_args_for_app(raw_args) or _PENDING_APP_NAME or settings.APP
+        if not getattr(self, "_bedrock_commands_loaded", False):
+            app = _resolve_run_app(args)
             if app:
                 self._load_app_commands(app)
+                self._bedrock_commands_loaded = True
+        return super().make_context(info_name, args, parent, **extra)
+
+    def format_help(self, ctx: Context, formatter: click.HelpFormatter) -> None:
+        self._ensure_app_commands(ctx)
         return super().format_help(ctx, formatter)
 
     def get_help(self, ctx: Context) -> str:
-        if not _APP_LOAD_STATES.get("loaded"):
-            global _PENDING_APP_NAME
-            app = ctx.params.get("app")
-            if not app:
-                raw_args: list[str] = getattr(ctx, "_raw_args", [])
-                app = _parse_args_for_app(raw_args) or _PENDING_APP_NAME or settings.APP
-            if app:
-                self._load_app_commands(app)
+        self._ensure_app_commands(ctx)
         return super().get_help(ctx)
 
     def resolve_command(self, ctx: Context, args: list[str]) -> tuple[str, click.Command, list[str]]:
-        if not _APP_LOAD_STATES.get("loaded"):
-            global _PENDING_APP_NAME
-            app = ctx.params.get("app")
-            if not app:
-                raw_args: list[str] = getattr(ctx, "_raw_args", [])
-                app = _parse_args_for_app(raw_args) or _PENDING_APP_NAME or settings.APP
-            if app:
-                self._load_app_commands(app)
+        self._ensure_app_commands(ctx)
         return super().resolve_command(ctx, args)
 
     def get_command(self, ctx: Context, cmd_name: str) -> click.Command | None:
-        if not _APP_LOAD_STATES.get("loaded"):
-            global _PENDING_APP_NAME
-            app = ctx.params.get("app")
-            if not app:
-                raw_args: list[str] = getattr(ctx, "_raw_args", [])
-                app = _parse_args_for_app(raw_args) or _PENDING_APP_NAME or settings.APP
-            if app:
-                self._load_app_commands(app)
+        self._ensure_app_commands(ctx)
         return super().get_command(ctx, cmd_name)
 
     def list_commands(self, ctx: Context) -> list[str]:
-        if not _APP_LOAD_STATES.get("loaded"):
-            global _PENDING_APP_NAME
-            app = ctx.params.get("app")
-            if not app:
-                raw_args: list[str] = getattr(ctx, "_raw_args", [])
-                app = _parse_args_for_app(raw_args) or _PENDING_APP_NAME or settings.APP
-            if app:
-                self._load_app_commands(app)
+        self._ensure_app_commands(ctx)
         return super().list_commands(ctx)
 
 
 def _create_run_app() -> typer.Typer:
     """Create the ``run`` Typer with dynamic app command loading."""
-    global _PENDING_APP_NAME
-
-    raw_args = sys.argv[1:]
-    _PENDING_APP_NAME = _parse_run_args_for_app(raw_args) or settings.APP
-
     run_app = typer.Typer(
         cls=_AppCommandGroup,
         help="Run a Bedrock application's commands",
@@ -155,7 +141,14 @@ def _create_run_app() -> typer.Typer:
 
     @run_app.callback(invoke_without_command=True)
     def main(
-        ctx: typer.Context, app: str | None = typer.Option(None, "--app", "-a", help="Specify the module to load")
+        ctx: typer.Context,
+        app: str | None = typer.Option(
+            None,
+            "--app",
+            "-a",
+            envvar="BEDROCK_APP",
+            help="Module to load (or set the BEDROCK_APP environment variable).",
+        ),
     ):
         if ctx.invoked_subcommand is None:
             click.echo(ctx.get_help())

@@ -10,12 +10,20 @@ from bedrock.utils.lazyload import load_optional_callable
 logger = get_logger()
 
 
-def manage_callback(app: str | None = typer.Option(None, "-A", help="Specify the module to load")):
+def manage_callback(
+    app: str | None = typer.Option(
+        None,
+        "--app",
+        "-A",
+        envvar="BEDROCK_APP",
+        help="Module to load (or set the BEDROCK_APP environment variable).",
+    ),
+):
     from bedrock.module import apps
 
     app = app or settings.APP
     if not app:
-        typer.echo("No app specified. Use --app or set the APP environment variable.")
+        typer.echo("No app specified. Use --app/-A or set the BEDROCK_APP environment variable.")
         raise typer.Exit(code=1)
     apps.populate([app])
     for app in apps.all():

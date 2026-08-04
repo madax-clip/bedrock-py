@@ -97,13 +97,13 @@ def _run_basic_inspect(import_path: str, console: Console) -> InspectResult:
         pre_install = load_optional_callable(f"{app_config.name}.installation:pre_install")
         if pre_install:
             _check_installation_hooks(pre_install)
-        installation()
         post_install = load_optional_callable(f"{app_config.name}.installation:post_install")
         if post_install:
             _check_installation_hooks(post_install)
         result.installation_valid = True
         console.print(
-            f"[bold green]✓[/bold green] Installation hooks for '{app_config.name}' are valid and executable."
+            f"[bold green]✓[/bold green] Installation hooks for '{app_config.name}' are valid "
+            "(validated passively; hooks are never executed by inspect)."
         )
     except (InvalidModuleCallableError, ModuleError) as exc:
         result.errors.append(f"Installation hook check failed: {exc}")
@@ -146,7 +146,6 @@ def _inspect_dependency(dep_path: str) -> InspectResult:
         pre_install = load_optional_callable(f"{app_config.name}.installation:pre_install")
         if pre_install:
             _check_installation_hooks(pre_install)
-        installation()
         post_install = load_optional_callable(f"{app_config.name}.installation:post_install")
         if post_install:
             _check_installation_hooks(post_install)

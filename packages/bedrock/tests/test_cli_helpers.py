@@ -17,34 +17,42 @@ class TestRunHelperParsing:
     """Tests for argument parsing helpers in ``bedrock.cli.run``."""
 
     @pytest.mark.parametrize(
-        ("args", "expected"),
-        [
-            (["--app", "demo.app"], "demo.app"),
-            (["-a", "demo.app"], "demo.app"),
-            (["--app=demo.app"], "demo.app"),
-            (["-a=demo.app"], "demo.app"),
-            (["serve", "--app", "demo.app", "--app", "other.app"], "demo.app"),
-            (["--app"], None),
-            (["serve"], None),
-        ],
-    )
-    def test_parse_args_for_app(self, args: list[str], expected: str | None) -> None:
-        assert cli_run._parse_args_for_app(args) == expected
-
-    @pytest.mark.parametrize(
         ("argv", "expected"),
         [
             (["run", "--app", "demo.app"], "demo.app"),
             (["run", "-a", "demo.app"], "demo.app"),
             (["run", "--app=demo.app"], "demo.app"),
             (["run", "serve", "--app", "demo.app"], "demo.app"),
-            (["serve", "--app", "demo.app", "run"], None),
-            (["run", "serve"], "serve"),
-            (["run", "my_app", "my_command"], "my_app"),
+            (["run", "--app", "demo.app", "serve"], "demo.app"),
+            (["--app", "demo.app", "run"], None),
+            # Positional tokens are module commands, never module names.
+            (["run", "serve"], None),
+            (["run", "my_app", "my_command"], None),
         ],
     )
     def test_parse_run_args_for_app(self, argv: list[str], expected: str | None) -> None:
         assert cli_run._parse_run_args_for_app(argv) == expected
+
+    def test_resolve_run_app_prefers_flag_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from bedrock.settings import settings
+
+        monkeypatch.setattr(settings, "APP", "env.app")
+
+        assert cli_run._resolve_run_app(["run", "--app", "flag.app", "serve"]) == "flag.app"
+
+    def test_resolve_run_app_falls_back_to_bedrock_app_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from bedrock.settings import settings
+
+        monkeypatch.setattr(settings, "APP", "env.app")
+
+        assert cli_run._resolve_run_app(["run", "serve"]) == "env.app"
+
+    def test_resolve_run_app_ignores_positional_command(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from bedrock.settings import settings
+
+        monkeypatch.setattr(settings, "APP", None)
+
+        assert cli_run._resolve_run_app(["run", "my_command", "--flag"]) is None
 
 
 class TestAppsHelpers:
@@ -74,7 +82,9 @@ class TestAppsHelpers:
         with pytest.raises(InvalidModuleCallableError, match=r"must accept \*\*kwargs"):
             cli_apps._check_installation_hooks(install)
 
-    def test_inspect_dependency_executes_installation_hooks(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_inspect_dependency_validates_installation_hooks_without_executing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         install_calls: list[dict[str, object]] = []
         validated_hooks: list[str] = []
 
@@ -115,7 +125,8 @@ class TestAppsHelpers:
         assert result.installation_valid is True
         assert result.errors == []
         assert validated_hooks == ["install", "pre_install", "post_install"]
-        assert install_calls == [{}]
+        # The critical safety property: inspect never invokes the hooks.
+        assert install_calls == []
 
     def test_inspect_dependency_reports_missing_install_function(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(cli_apps, "find_spec", lambda dep_path: object())

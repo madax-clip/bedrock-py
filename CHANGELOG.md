@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - contrib: new `bedrock.contrib.rate_limit` module with `RateLimit` — process-local,
   thread-safe rolling-window admission decisions with injectable clock and immutable
   `RateLimitDecision` results
+- cli: `bedrock --version` / `-v` now reports the installed `bedrock-core` distribution
+  version and exits
+
+### Fixed
+
+- cli: `bedrock run --app MODULE COMMAND` is repaired — the `--app`/`-a` flag (or the
+  `BEDROCK_APP` environment variable) selects the module, and each loaded module's Typer
+  app is mounted under its module name; module command names can no longer be misread as
+  module names, and command-group collisions are deterministic (namespaced per module;
+  built-in commands win with a warning)
+- cli: `bedrock app inspect` is now passive — installation hooks of the inspected module
+  and its dependencies are signature-checked but never executed
+- cli: `bedrock manage` accepts `--app` as well as `-A`, and both `run` and `manage`
+  document the `BEDROCK_APP` environment variable
+
+### Security
+
+- docs: the CLI reference now states explicitly that installed modules are trusted
+  executable plugins — importing a module executes its code and Bedrock provides no
+  sandboxing or passive-import guarantee
 
 ### Fixed
 

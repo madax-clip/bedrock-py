@@ -15,8 +15,16 @@ bedrock [OPTIONS] COMMAND [ARGS]
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--version` | `-v` | Show Bedrock version and exit |
+| `--version` | `-v` | Show the installed `bedrock-core` version and exit |
 | `--help` | `-h` | Show help message and exit |
+
+<Callout type="warn">
+**Trust model:** installed Bedrock modules are **trusted executable plugins**. Importing a
+module executes its Python code, and Bedrock provides no sandboxing or passive-import
+guarantee. Only install modules you trust. Informational commands (`app inspect`,
+`app info`, `app playbook`) minimize active work — `app inspect` never executes
+installation hooks — but they still import the module package.
+</Callout>
 
 ### Command Groups
 
@@ -44,7 +52,11 @@ bedrock app inspect <import_path>
 2. Module can be imported successfully
 3. Bootstrap submodule exists
 4. Models submodule exists
-5. Installation hooks are valid
+5. Installation hooks are present and signature-valid
+
+Inspection is **passive**: installation hooks (`pre_install` / `install` / `post_install`)
+of the inspected module and its dependencies are only signature-checked — they are **never
+executed** by this command. Use `bedrock manage install` to run installation hooks.
 
 **Example:**
 
@@ -55,7 +67,7 @@ $ bedrock app inspect myapp.users
 ✓ Module 'myapp.users' loads successfully.
 ✓ Bootstrap submodule is available.
 ! No models submodule found.
-✓ Installation hooks for 'myapp.users' are valid and executable.
+✓ Installation hooks for 'myapp.users' are valid (validated passively; hooks are never executed by inspect).
 ```
 
 **Exit codes:**
@@ -320,11 +332,19 @@ Commands for managing the application lifecycle.
 
 ### `bedrock manage install`
 
-Install the current Bedrock application.
+Install the current Bedrock application. The module set to manage is selected with the
+`--app` / `-A` option on the `manage` group, or with the `BEDROCK_APP` environment
+variable.
 
 ```bash
-bedrock manage install [OPTIONS]
+bedrock manage --app <module> install [OPTIONS]
 ```
+
+**Group options:**
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--app` | `-A` | Module to load (or set the `BEDROCK_APP` environment variable) |
 
 **Options:**
 
@@ -343,14 +363,14 @@ bedrock manage install [OPTIONS]
 **Examples:**
 
 ```bash
-# Install all modules
-bedrock manage install
+# Install all modules of the loaded application
+bedrock manage --app myapp.users install
 
 # Install specific module
-bedrock manage install -A myapp.users
+bedrock manage --app myapp.users install --app myapp.users
 
 # Skip migrations
-bedrock manage install --skip-migrations
+bedrock manage --app myapp.users install --skip-migrations
 ```
 
 **Example output:**
@@ -371,14 +391,23 @@ Running post-install hook for myapp.users...
 Execute module-specific CLI commands.
 
 ```bash
-bedrock run --app <module> <command> [ARGS]
+bedrock run --app <module> <module> <command> [ARGS]
 ```
 
 **Options:**
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--app` | `-a` | Module to load (or set `APP` env var) |
+| `--app` | `-a` | Module to load (or set the `BEDROCK_APP` environment variable) |
+
+The selected module is loaded together with its declared dependencies. Each module's Typer
+app is mounted under its **module name**, so a command registered by `myapp.users` is
+invoked as `bedrock run --app myapp.users myapp.users <command>`.
+
+**Collision behavior (deterministic):** module names are unique registry keys, so module
+command groups can never collide with each other — commands are always namespaced per
+module. If a module name would shadow a built-in `run` command, the built-in command wins
+and a warning is printed to stderr.
 
 ### How Module Commands Work
 
@@ -412,15 +441,15 @@ commands: commands:app
 ### Examples
 
 ```bash
-# Run module command
-bedrock run --app myapp.users create-user --name Alice --email alice@example.com
+# Run a module command (module name namespaces its commands)
+bedrock run --app myapp.users myapp.users create-user --name Alice --email alice@example.com
 
 # List available commands
 bedrock run --app myapp.users --help
 
-# Use APP environment variable
-export APP=myapp.users
-bedrock run create-user --name Bob --email bob@example.com
+# Use the BEDROCK_APP environment variable
+export BEDROCK_APP=myapp.users
+bedrock run myapp.users create-user --name Bob --email bob@example.com
 ```
 
 ---
@@ -429,7 +458,7 @@ bedrock run create-user --name Bob --email bob@example.com
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `APP` | Default app for `run` and `manage` commands | None |
+| `BEDROCK_APP` | Default module for `run` and `manage` commands | None |
 | `DATABASE_URL` | Database connection string | Required for `db` commands |
 
 ---
