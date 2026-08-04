@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- contrib: new `bedrock.contrib.metrics` module with `MetricsRegistry` — minimal in-process,
+  thread-safe counters and gauges with immutable, name-sorted `MetricSnapshot` snapshots
+
 ### Fixed
 
 - di: `@inject` preserves the async identity of decorated coroutine functions and

@@ -1,0 +1,62 @@
+---
+title: 指标
+description: 进程内极简计数器与仪表，支持线程安全的不可变快照
+---
+
+Bedrock 内置了一个极简的进程内指标模块，位于 `bedrock.contrib.metrics`。它提供声明式的计数器（counter）与仪表（gauge），支持线程安全的变更和不可变、按名称确定性排序的快照。该模块不包含标签、直方图、计时器、导出器、HTTP 端点或全局单例 —— 请自行实例化 `MetricsRegistry` 并在需要的地方传递。
+
+## 快速开始
+
+```python
+from bedrock.contrib.metrics import MetricsRegistry
+
+metrics = MetricsRegistry()
+
+# 使用前必须先声明指标
+metrics.counter("request_count")
+metrics.gauge("active_connections")
+
+# 变更
+metrics.increment("request_count")        # +1
+metrics.increment("request_count", -3)    # 允许负增量
+metrics.set_gauge("active_connections", 12)
+
+# 读取
+for snap in metrics.snapshot():
+    print(snap.name, snap.value)
+```
+
+## API
+
+### 声明
+
+- `MetricsRegistry.counter(name)` —— 声明一个初始值为 `0` 的计数器。
+- `MetricsRegistry.gauge(name, initial=0)` —— 声明一个仪表，可选初始值。
+
+名称必须为非空的小写 snake_case（例如 `request_count`）。重复声明同一名称会抛出 `MetricAlreadyDeclaredError`；非法名称会抛出 `InvalidMetricNameError`。
+
+### 变更
+
+- `increment(name, amount=1) -> int | float` —— 将已声明的计数器增加 `amount` 并返回新值，允许负数。
+- `set_gauge(name, value)` —— 将已声明的仪表设置为 `value`。
+
+对未声明的指标进行操作会抛出 `MetricNotDeclaredError`。对声明类型不匹配的指标使用错误的操作（例如对 gauge 调用 `increment`）会抛出 `MetricKindMismatchError`。
+
+### 快照
+
+`snapshot()` 返回按指标名称排序的不可变 `MetricSnapshot(name, value)` 元组。快照是副本 —— 之后的变更永远不会影响已返回的快照。
+
+## 线程安全
+
+所有变更与快照操作均由内部锁保护。多个线程并发调用 `increment`、`set_gauge` 和 `snapshot` 是安全的，且不会暴露任何可变的内部状态。
+
+## 错误
+
+所有指标错误都经由 `MetricsError` 继承自 `bedrock.exc.BedrockExc`：
+
+| 异常 | 触发条件 |
+| --- | --- |
+| `InvalidMetricNameError` | 名称为空或不是小写 snake_case |
+| `MetricAlreadyDeclaredError` | 重复声明同名指标 |
+| `MetricNotDeclaredError` | 操作未声明的指标 |
+| `MetricKindMismatchError` | 操作与声明的指标类型不匹配 |

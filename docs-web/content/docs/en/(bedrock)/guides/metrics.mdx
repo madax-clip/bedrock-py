@@ -1,0 +1,62 @@
+---
+title: Metrics
+description: Minimal in-process counters and gauges with thread-safe, immutable snapshots
+---
+
+Bedrock ships a minimal in-process metrics module under `bedrock.contrib.metrics`. It provides declared counters and gauges with thread-safe mutation and immutable, deterministically ordered snapshots. There are no labels, histograms, timers, exporters, HTTP endpoints, or global singletons — instantiate a `MetricsRegistry` and pass it where you need it.
+
+## Quick Start
+
+```python
+from bedrock.contrib.metrics import MetricsRegistry
+
+metrics = MetricsRegistry()
+
+# Declare metrics before use
+metrics.counter("request_count")
+metrics.gauge("active_connections")
+
+# Mutate
+metrics.increment("request_count")        # +1
+metrics.increment("request_count", -3)    # negative deltas are allowed
+metrics.set_gauge("active_connections", 12)
+
+# Read
+for snap in metrics.snapshot():
+    print(snap.name, snap.value)
+```
+
+## API
+
+### Declaration
+
+- `MetricsRegistry.counter(name)` — declare a counter initialized to `0`.
+- `MetricsRegistry.gauge(name, initial=0)` — declare a gauge with an optional initial value.
+
+Names must be non-empty lowercase snake_case (e.g. `request_count`). Declaring a name twice raises `MetricAlreadyDeclaredError`; invalid names raise `InvalidMetricNameError`.
+
+### Mutation
+
+- `increment(name, amount=1) -> int | float` — add `amount` to a declared counter and return the new value. Negative amounts are allowed.
+- `set_gauge(name, value)` — set a declared gauge to `value`.
+
+Operating on an undeclared metric raises `MetricNotDeclaredError`. Using the wrong operation for the declared kind (e.g. `increment` on a gauge) raises `MetricKindMismatchError`.
+
+### Snapshots
+
+`snapshot()` returns a tuple of immutable `MetricSnapshot(name, value)` objects sorted by metric name. Snapshots are copies — later mutations never affect a previously returned snapshot.
+
+## Thread Safety
+
+All mutations and snapshots are guarded by an internal lock. Concurrent `increment`, `set_gauge`, and `snapshot` calls from multiple threads are safe and never expose mutable internal state.
+
+## Errors
+
+All metrics errors inherit from `bedrock.exc.BedrockExc` via `MetricsError`:
+
+| Exception | Raised when |
+| --- | --- |
+| `InvalidMetricNameError` | Name is empty or not lowercase snake_case |
+| `MetricAlreadyDeclaredError` | Declaring an already-declared name |
+| `MetricNotDeclaredError` | Mutating an undeclared metric |
+| `MetricKindMismatchError` | Operation does not match the declared kind |
