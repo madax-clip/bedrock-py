@@ -1,5 +1,6 @@
 """Unit tests for the Bedrock DI container."""
 
+import inspect
 import threading
 
 import pytest
@@ -479,6 +480,32 @@ class TestInjectDecorator:
 
         assert my_func.__name__ == "my_func"
         assert my_func.__doc__ == "My docstring."
+
+    @pytest.mark.asyncio
+    async def test_inject_preserves_async_identity_and_returns_awaited_result(self) -> None:
+        """An @inject-decorated async function stays a coroutine function and resolves its result."""
+        from bedrock.di.decorators import inject
+
+        container.register_instance(_FakeService, _FakeService(42))
+
+        @inject(dep=_FakeService)
+        async def my_func(*, dep: _FakeService) -> int:
+            return dep.value
+
+        assert inspect.iscoroutinefunction(my_func) is True
+        assert await my_func() == 42
+
+    def test_inject_preserves_sync_behavior(self) -> None:
+        from bedrock.di.decorators import inject
+
+        container.register_instance(_FakeService, _FakeService(7))
+
+        @inject(dep=_FakeService)
+        def my_func(*, dep: _FakeService) -> int:
+            return dep.value
+
+        assert inspect.iscoroutinefunction(my_func) is False
+        assert my_func() == 7
 
     def test_container_inject_resolves_from_custom_container_only(self) -> None:
         custom = Container()

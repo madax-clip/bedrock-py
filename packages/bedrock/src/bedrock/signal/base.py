@@ -32,7 +32,12 @@ RobustDispatchResult = list[tuple[Receiver, t.Any | Exception]]
 ANY = Symbol("ANY")
 """Symbol for "any sender"."""
 
-ANY_ID = 0
+ANY_ID = make_id(ANY)
+"""Sentinel sender id for :data:`ANY`.
+
+Derived from the ``ANY`` symbol itself so it can never collide with a real
+sender id — in particular, the integer sender ``0`` is a distinct sender.
+"""
 
 
 class Signal:
@@ -203,7 +208,7 @@ class Signal:
         try:
             yield None
         finally:
-            self.disconnect(receiver)
+            self.disconnect(receiver, sender)
 
     @contextmanager
     def muted(self) -> c.Generator[None, None, None]:

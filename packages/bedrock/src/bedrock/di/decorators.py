@@ -122,6 +122,17 @@ def build_inject(container: "Container") -> Callable[..., Any]:
         """
 
         def _decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+            if inspect.iscoroutinefunction(fn):
+
+                @functools.wraps(fn)
+                async def _async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                    for param_name, service_key in mappings.items():
+                        if param_name not in kwargs:
+                            kwargs[param_name] = container.resolve(service_key)
+                    return await fn(*args, **kwargs)
+
+                return _async_wrapper
+
             @functools.wraps(fn)
             def _wrapper(*args: Any, **kwargs: Any) -> Any:
                 for param_name, service_key in mappings.items():

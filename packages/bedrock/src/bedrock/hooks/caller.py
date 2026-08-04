@@ -59,6 +59,10 @@ async def dispatch_acall(
             result = await impl.fn(**kwargs)
         else:
             result = await asyncio.to_thread(impl.fn, **kwargs)
+            if inspect.isawaitable(result):
+                # A sync wrapper (e.g. a decorator) returned an awaitable;
+                # await it so dispatch yields the concrete result.
+                result = await result
         if firstresult:
             if result is not None:
                 results.append(result)

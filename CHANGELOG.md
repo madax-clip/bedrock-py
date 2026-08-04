@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- di: `@inject` preserves the async identity of decorated coroutine functions and
+  awaits their result instead of returning an unawaited coroutine
+- hooks: async dispatch awaits awaitables returned by sync wrappers (e.g.
+  decorator-wrapped async hook implementations)
+- signal: integer sender `0` is now a distinct sender and is no longer aliased to
+  the `ANY` wildcard route
+- signal: exiting `connected_to(..., sender=X)` removes only the temporary `X`
+  route and preserves the receiver's pre-existing routes
+
 ## [0.1.2] - 2026-05-23
 
 ### Fixed

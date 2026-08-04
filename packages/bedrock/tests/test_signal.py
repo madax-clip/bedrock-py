@@ -315,6 +315,40 @@ class TestSignalRouting:
         assert sig.has_receivers_for(object()) is False
 
 
+class TestIntegerSenderRouting:
+    """Integer senders (including ``0``) are distinct senders, never wildcard routes."""
+
+    def test_integer_zero_sender_is_not_treated_as_any(self) -> None:
+        sig = Signal()
+        calls: list[object] = []
+
+        def zero_receiver(sender, **kwargs):
+            calls.append(sender)
+            return "zero"
+
+        sig.connect(zero_receiver, sender=0, weak=False)
+
+        assert sig.send("other") == []
+        assert sig.send(1) == []
+        assert sig.send(0) == [(zero_receiver, "zero")]
+        assert calls == [0]
+
+    def test_integer_zero_sender_alongside_any_receiver(self) -> None:
+        sig = Signal()
+
+        def any_receiver(sender, **kwargs):
+            return f"any:{sender}"
+
+        def zero_receiver(sender, **kwargs):
+            return f"zero:{sender}"
+
+        sig.connect(any_receiver, weak=False)
+        sig.connect(zero_receiver, sender=0, weak=False)
+
+        assert [result for _, result in sig.send(7)] == ["any:7"]
+        assert sorted(result for _, result in sig.send(0)) == ["any:0", "zero:0"]
+
+
 class TestSignalUtilities:
     """Tests for muted, temporary connections, and cleanup behavior."""
 
@@ -334,6 +368,24 @@ class TestSignalUtilities:
         assert inside == [(receiver, "ok")]
         assert outside == []
         assert calls == ["inside"]
+
+    def test_connected_to_with_sender_removes_only_the_temporary_route(self) -> None:
+        sig = Signal()
+
+        def receiver(sender, **kwargs):
+            return f"seen:{sender}"
+
+        sig.connect(receiver, sender="permanent", weak=False)
+
+        with sig.connected_to(receiver, sender="temporary"):
+            inside = sig.send("temporary")
+
+        after_temp = sig.send("temporary")
+        after_perm = sig.send("permanent")
+
+        assert inside == [(receiver, "seen:temporary")]
+        assert after_temp == []
+        assert after_perm == [(receiver, "seen:permanent")]
 
     def test_muted_suppresses_dispatch(self) -> None:
         sig = Signal()

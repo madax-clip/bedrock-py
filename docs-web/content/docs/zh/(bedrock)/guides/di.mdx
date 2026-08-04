@@ -205,6 +205,8 @@ def send_welcome(user_email: str, *, mailer: Mailer) -> None:
 
 显式传入的关键字参数优先级高于自动注入的值。
 
+`@inject` 会保留异步函数的特性：装饰 `async def` 函数后它仍然是协程函数，await 调用返回的是实际结果。
+
 如果要从隔离容器中注入依赖，请使用绑定在容器实例上的装饰器：
 
 ```python

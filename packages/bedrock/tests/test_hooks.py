@@ -494,6 +494,37 @@ class TestHookNamespace:
 class TestHookDispatch:
     """Sync/async/firstresult dispatch behavior via caller module."""
 
+    @pytest.mark.asyncio
+    async def test_acall_awaits_inject_wrapped_async_impl(self) -> None:
+        """An @inject-decorated async impl is awaited by async dispatch and returns its concrete result."""
+        from bedrock.di.container import Container
+
+        class Greeter:
+            def greet(self, name: str) -> str:
+                return f"hello:{name}"
+
+        di = Container()
+        di.register_instance(Greeter, Greeter())
+
+        reg = HookRegistry()
+        ns = HookNamespace("greet", registry=reg)
+
+        class Spec:
+            @hookspec
+            def hello(self, name: str) -> str: ...
+
+        class Impl:
+            @hookimpl
+            @di.inject(greeter=Greeter)
+            async def hello(self, name: str, greeter: Greeter) -> str:
+                return greeter.greet(name)
+
+        ns.add_specs_from(Spec)
+        ns.add_impls_from(Impl())
+
+        results = await ns.acall("hello", name="bob")
+        assert results == ["hello:bob"]
+
     def test_firstresult_stops_after_first_non_none(self) -> None:
         reg = HookRegistry()
         ns = HookNamespace("auth", registry=reg)

@@ -214,6 +214,10 @@ def send_welcome(user_email: str, *, mailer: Mailer) -> None:
 
 Explicit keyword arguments always win over injected values.
 
+`@inject` preserves async functions: decorating an `async def` keeps it a
+coroutine function, and awaiting the decorated call returns the concrete
+result.
+
 To inject from an isolated container, use the container-bound decorator:
 
 ```python
