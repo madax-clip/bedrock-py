@@ -39,11 +39,11 @@ jobs:
       - name: Release notes are present and non-empty
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          sed -n "/^## \[$VERSION\]/,/^## \[/p" CHANGELOG.md | sed '1d;$d' > release_notes.md
-          if [ ! -s release_notes.md ] || ! grep -q '[^[:space:]]' release_notes.md; then
-            echo "::error::CHANGELOG.md has no (or empty) release notes section for [$VERSION]. Refusing to publish."
-            exit 1
-          fi
+          # scripts/extract_release_notes.py handles a section that runs to
+          # EOF (the old sed extraction dropped its final line and could
+          # fail a valid one-line release as empty). It exits non-zero when
+          # the section is missing or blank.
+          python scripts/extract_release_notes.py CHANGELOG.md "$VERSION" > release_notes.md
           cat release_notes.md
 
       - name: Upload release notes
@@ -99,10 +99,31 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Install both wheels into a clean environment
+      - name: Install the downloaded wheels into a clean environment
         run: |
+          # Install the exact wheel files produced by the build job. Passing
+          # explicit paths (not bare names) means the step fails if either
+          # downloaded artifact is missing, and the packages under test are
+          # guaranteed to be the built wheels. Third-party dependencies may
+          # still resolve from the registry.
+          CORE_WHEEL=$(ls dist/bedrock_core-*.whl)
+          CLI_WHEEL=$(ls dist/bedrock_cli-*.whl)
+          echo "core wheel: $CORE_WHEEL"
+          echo "cli wheel:  $CLI_WHEEL"
+          test -f "$CORE_WHEEL" || { echo "::error::bedrock-core wheel missing from downloaded artifacts"; exit 1; }
+          test -f "$CLI_WHEEL" || { echo "::error::bedrock-cli wheel missing from downloaded artifacts"; exit 1; }
           uv venv .smoke-venv
-          uv pip install --python .smoke-venv/bin/python --find-links dist bedrock-core bedrock-cli
+          uv pip install --python .smoke-venv/bin/python --find-links dist "$CORE_WHEEL" "$CLI_WHEEL"
+          # Assert the installed distributions are exactly the downloaded wheels.
+          CORE_WHEEL_VERSION=$(basename "$CORE_WHEEL" | cut -d- -f2)
+          CLI_WHEEL_VERSION=$(basename "$CLI_WHEEL" | cut -d- -f2)
+          CORE_INSTALLED=$(.smoke-venv/bin/python -c "import importlib.metadata; print(importlib.metadata.version('bedrock-core'))")
+          CLI_INSTALLED=$(.smoke-venv/bin/python -c "import importlib.metadata; print(importlib.metadata.version('bedrock-cli'))")
+          echo "installed bedrock-core==$CORE_INSTALLED (wheel $CORE_WHEEL_VERSION), bedrock-cli==$CLI_INSTALLED (wheel $CLI_WHEEL_VERSION)"
+          if [ "$CORE_INSTALLED" != "$CORE_WHEEL_VERSION" ] || [ "$CLI_INSTALLED" != "$CLI_WHEEL_VERSION" ]; then
+            echo "::error::Installed distribution versions do not match the downloaded wheels"
+            exit 1
+          fi
 
       - name: Smoke import and CLI entry points
         run: |
@@ -114,13 +135,29 @@ jobs:
 
       - name: Smoke scaffold resolves and installs bedrock-core
         run: |
+          DIST_DIR="$PWD/dist"
+          CORE_WHEEL=$(ls dist/bedrock_core-*.whl)
+          CORE_WHEEL_VERSION=$(basename "$CORE_WHEEL" | cut -d- -f2)
           .smoke-venv/bin/bedrock-cli init smoke-app -o /tmp/smoke
           grep -q '"bedrock-core>=0.2.0"' /tmp/smoke/smoke-app/pyproject.toml
           cd /tmp/smoke/smoke-app
           uv venv .app-venv
-          # Resolve the scaffold's bedrock-core requirement against the freshly built wheel.
-          uv pip install --python .app-venv/bin/python --find-links "$OLDPWD/dist" bedrock-core
+          # Seed the app venv with the freshly built core wheel so the
+          # scaffold's declared bedrock-core dependency is satisfied by the
+          # artifact under test, never by a registry release.
+          uv pip install --python .app-venv/bin/python "$DIST_DIR/$(basename "$CORE_WHEEL")"
+          # Install the generated project itself. Its declared bedrock-core
+          # dependency must resolve against the freshly built core wheel
+          # (third-party deps may still come from the registry), so a
+          # scaffold dependency that does not actually resolve fails here.
+          uv pip install --python .app-venv/bin/python --find-links "$DIST_DIR" .
           .app-venv/bin/python -c "import bedrock"
+          APP_CORE_INSTALLED=$(.app-venv/bin/python -c "import importlib.metadata; print(importlib.metadata.version('bedrock-core'))")
+          echo "scaffold venv bedrock-core==$APP_CORE_INSTALLED (wheel $CORE_WHEEL_VERSION)"
+          if [ "$APP_CORE_INSTALLED" != "$CORE_WHEEL_VERSION" ]; then
+            echo "::error::Scaffolded project did not resolve the freshly built bedrock-core wheel"
+            exit 1
+          fi
 
   dependency-scan:
     name: Dependency vulnerability scan

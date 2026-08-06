@@ -12,7 +12,7 @@ Agent guidance for the Bedrock monorepo.
 Python monorepo for Bedrock modular framework. `uv` workspaces, `src/` layout.
 
 - `packages/bedrock` — Core runtime (active)
-- `packages/bedrock-cli` — Scaffolding CLI (planned, gitignored)
+- `packages/bedrock-cli` — Scaffolding CLI (active, published as `bedrock-cli`)
 - `packages/bedrock-example` — Example app (gitignored)
 - `docs-web/` — Derived fumadocs Web Doc site (don't hand-edit)
 - `docs-web/content/docs` — Docs source-of-truth (MDX)
@@ -85,13 +85,14 @@ uvx pip-audit --disable-pip -r /tmp/reqs.txt
 - **Imports**: Relative within-package, absolute cross-package
 
 ## Exceptions
+
 - All custom exceptions must inherit from `BedrockExc`
 - Always raise exceptions which are subclasses of `BedrockExc` for Business Error.
 - Always Write Human-Readable Messages in `detail` attribute of BedrockExc.
 
 ## Documentation
-- Hand-write under `docs-web/content/docs/`
 
+- Hand-write under `docs-web/content/docs/`
 
 ## Anti-Patterns (This Project)
 
@@ -103,7 +104,7 @@ uvx pip-audit --disable-pip -r /tmp/reqs.txt
 ## Notes
 
 - Root `pyproject.toml` is workspace coordinator only, not application package
-- `bedrock-cli` is planned/future work—current CLI lives in `packages/bedrock/src/bedrock/cli/`
+- Two CLIs exist: `bedrock-cli` (`packages/bedrock-cli`, published distribution) is the project scaffolding tool (`bedrock-cli init`); the core runtime CLI `bedrock` (`packages/bedrock/src/bedrock/cli/`, shipped with `bedrock-core`) runs and inspects Bedrock apps. They are separate distributions versioned in lockstep.
 - Ruff config: `[tool.ruff]` in root `pyproject.toml`
 - Pytest: dev dependency, 4 test files, no conftest.py
 - Both packages (`bedrock-core`, `bedrock-cli`) are versioned in lockstep; runtime versions derive from installed distribution metadata, so `pyproject.toml` is the single source of truth
