@@ -1,0 +1,47 @@
+---
+title: 文件存储
+description: 安全的同步 local 与 S3 对象存储。
+---
+
+`bedrock.contrib.storage` 提供同步、跨 provider 的完整对象与有界流式读取 API。local backend 无需额外依赖；S3 使用 `storage-s3` extra。
+
+## 操作与元数据
+
+```python
+from bedrock.contrib.storage import storage
+
+storage.configure("local")
+stored = storage.put("avatars/42.png", image_bytes, mime_type="image/png")
+metadata = storage.head(stored.key)
+assert metadata.size == len(image_bytes)
+assert metadata.mime_type == "image/png"
+assert b"".join(storage.stream(stored.key, chunk_size=64 * 1024)) == image_bytes
+
+storage.copy(stored.key, "avatars/42-copy.png")
+storage.mv("avatars/42-copy.png", "archive/42.png")
+storage.delete(stored.key)
+```
+
+`head` 和 `put` 返回 `StoredFile`：`key`、`mime_type`、`size`、`etag`、`checksum`、`last_modified`、用户 `metadata` 以及 JSON 兼容的 `provider_metadata`。`provider_metadata` 只保留安全的 backend 扩展字段，绝不含内容、凭据、签名 header 或敏感配置。
+
+所有路径都是相对 POSIX key。空 key、绝对路径、反斜杠、NUL 字节和 `.`/`..` 段都会被拒绝。local backend 还会阻止已有父级符号链接逃离根目录。`put(..., overwrite=False)` 使用原子创建。
+
+## Local 存储
+
+Local 是默认 backend，无额外依赖。通过 `STORAGE_LOCAL_ROOT` 设置根目录。`stream` 返回同步 `Iterable[bytes]`，消费迭代器时会自动打开和关闭文件。由于 `file://` URL 不便携且不安全，local backend 的 `get_signed_url` 会明确抛出 `StorageUnsupportedOperationError`。
+
+## S3 存储
+
+安装 S3 支持：
+
+```bash
+pip install 'bedrock-core[storage-s3]'
+```
+
+必须设置 `STORAGE_S3_BUCKET`；`STORAGE_S3_PREFIX`、`STORAGE_S3_REGION_NAME` 和 `STORAGE_S3_ENDPOINT_URL` 可选。凭据由 boto3 provider chain 提供。自定义 endpoint 默认要求 HTTPS；只在本地开发时通过 `STORAGE_S3_ALLOW_INSECURE_ENDPOINT=true` 显式允许非 TLS endpoint。
+
+S3 支持 `get_signed_url(path, expires_in=3600)` 生成临时下载 URL；日志不会记录 URL 或签名参数。`put(..., overwrite=False)` 使用 provider 端条件写入。S3 `copy`/`mv` 仅在同一 backend 内执行，`mv` 的实现是 copy 后 delete。S3 没有 destination-side conditional copy：`copy(..., overwrite=False)` 使用预检查，仍可能与并发写入发生竞态；需要严格 create-only 语义时请使用 `put`。
+
+## 使用手册
+
+对象可以安全完整载入内存时使用 `download`；较大读取使用 `stream`。本模块不包含 multipart upload、目录 listing、公开 URL 配置、版本管理或跨 backend 传输。
