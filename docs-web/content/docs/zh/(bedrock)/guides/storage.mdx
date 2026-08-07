@@ -5,6 +5,10 @@ description: 安全的同步 local 与 S3 对象存储。
 
 `bedrock.contrib.storage` 提供同步、跨 provider 的完整对象与有界流式读取 API。local backend 无需额外依赖；S3 使用 `storage-s3` extra。
 
+<Callout type="info">
+storage API 在 0.2 发布线中保持稳定。调用方应使用相对 POSIX key 与 `StoredFile` 元数据；本模块不提供 multipart upload、目录 listing、公开 URL、版本管理或跨 backend 传输。
+</Callout>
+
 ## 操作与元数据
 
 ```python

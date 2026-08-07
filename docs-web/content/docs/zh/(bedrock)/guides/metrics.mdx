@@ -5,6 +5,10 @@ description: 轻量 count/gauge 指标，带结构化日志与 Provider ABC 扩�
 
 Bedrock 在 `bedrock.contrib.metrics` 下提供轻量指标模块。它将 `count` 与 `gauge` 调用记录为结构化日志事件，并可选择转发给 provider。本版本不附带 Prometheus/OpenTelemetry/StatsD exporter —— `MetricsProvider` ABC 是为未来 adapter 准备的稳定扩展点。
 
+<Callout type="info">
+0.2 发布线将 `count`/`gauge` 与 `MetricsProvider` 约定作为稳定 API；它不提供进程内聚合或具体 exporter。
+</Callout>
+
 ## 快速开始
 
 ```python

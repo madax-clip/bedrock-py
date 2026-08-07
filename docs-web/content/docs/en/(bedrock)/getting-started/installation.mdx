@@ -30,13 +30,17 @@ We recommend uv for its speed and built-in virtual environment management. Insta
 
 Bedrock provides optional dependency groups for additional backends:
 
-<Tabs items={['Redis Cache']}>
+<Tabs items={['Redis Cache', 'S3 Storage']}>
   <Tab value="Redis Cache"><CodeBlock code={'uv add bedrock-core[cache-redis]'} lang={'bash'} /></Tab>
+  <Tab value="S3 Storage"><CodeBlock code={'uv add bedrock-core[storage-s3]'} lang={'bash'} /></Tab>
 </Tabs>
 
 | Extra | Packages | Description |
 |-------|----------|-------------|
 | `cache-redis` | `redis>=4.2.0` | Redis-backed distributed cache |
+| `storage-s3` | `boto3>=1.35.0` | S3-compatible object storage |
+
+The local storage backend has no extra dependency. Install `storage-s3` before configuring the S3 backend.
 
 ## Bedrock CLI (Scaffolding)
 

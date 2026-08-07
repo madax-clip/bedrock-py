@@ -5,6 +5,11 @@ description: Safe synchronous local and S3 object storage.
 
 `bedrock.contrib.storage` exposes a synchronous, provider-neutral API for complete objects and bounded streaming. It supports local storage without optional dependencies and S3 through the `storage-s3` extra.
 
+<Callout type="info">
+The storage API is stable in the 0.2 release line. Upgrade callers to use relative POSIX keys and `StoredFile` metadata;
+the module does not provide multipart uploads, directory listings, public URLs, version management, or cross-backend transfers.
+</Callout>
+
 ## Operations and metadata
 
 ```python

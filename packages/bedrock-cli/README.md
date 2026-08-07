@@ -1,17 +1,13 @@
 # bedrock-cli
 
-`bedrock-cli` is a planned future component of the Bedrock ecosystem.
+`bedrock-cli` is the 0.2.1 scaffolding companion for the Bedrock ecosystem.
 
 Its intended role is to provide CLI tooling for scaffolding, validation, inspection, and other developer workflows around Bedrock modular applications.
 
 ## Current status
 
-The Bedrock runtime contract is still being refined.
-Because of that, `bedrock-cli` should currently be treated as planning-in-future rather than a stable implementation target.
-
-- Keep its purpose and responsibilities documented.
-- Do not rely on the current command surface or signatures as stable contracts.
-- Resume active CLI development after the runtime/module conventions are sufficiently complete and explicit.
+The package provides project initialization, module scaffolding, and code generation. Its command surface remains
+evolutionary; pin the 0.2 release line when reproducible scaffolding output matters.
 
 ## Intended responsibilities
 

@@ -5,6 +5,10 @@ description: Lightweight count/gauge metrics with structured logging and a provi
 
 Bedrock ships a lightweight metrics module under `bedrock.contrib.metrics`. It records `count` and `gauge` calls as structured log events and forwards them to an optional provider. No Prometheus/OpenTelemetry/StatsD exporter ships in this version — the `MetricsProvider` ABC is the stable extension point for future adapters.
 
+<Callout type="info">
+The 0.2 release line makes the `count`/`gauge` and `MetricsProvider` contracts stable. It does not add in-process aggregation or a concrete exporter.
+</Callout>
+
 ## Quick Start
 
 ```python
