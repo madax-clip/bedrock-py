@@ -13,6 +13,7 @@ from bedrock.contrib.storage.backends.s3 import S3FileBackend, S3StorageSettings
 from bedrock.contrib.storage.exc import (
     StorageAlreadyExistsError,
     StorageConfigurationError,
+    StorageConnectionError,
     StorageNotFoundError,
     StorageOperationError,
     StorageUnsupportedOperationError,
@@ -124,6 +125,16 @@ class TestStorageService:
         service.close()
         service.close()
 
+    def test_failed_reconfigure_preserves_the_open_existing_backend(self, tmp_path: Path) -> None:
+        service = StorageService()
+        existing = service.configure("local", LocalStorageSettings(root=tmp_path / "objects"))
+
+        with pytest.raises(StorageConfigurationError, match="BUCKET"):
+            service.configure("s3", S3StorageSettings())
+
+        assert service.get_backend() is existing
+        assert not existing._closed
+
 
 class TestS3Storage:
     """Test S3 calls against fakes without credentials or network access."""
@@ -197,3 +208,19 @@ class TestS3Storage:
             S3FileBackend(S3StorageSettings(), client=Mock())
         with pytest.raises(StorageConfigurationError, match="https"):
             S3FileBackend(S3StorageSettings(bucket="bucket", endpoint_url="http://localhost"), client=Mock())
+
+    @pytest.mark.parametrize(
+        ("code", "expected_error"),
+        [
+            ("403", StorageOperationError),
+            ("503", StorageConnectionError),
+            ("PreconditionFailed", StorageAlreadyExistsError),
+        ],
+    )
+    def test_put_maps_provider_errors(self, code: str, expected_error: type[Exception]) -> None:
+        client = Mock()
+        client.put_object.side_effect = ClientError(code)
+        backend = self._backend(client)
+
+        with pytest.raises(expected_error):
+            backend.put("object.txt", b"content")

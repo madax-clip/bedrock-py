@@ -280,7 +280,11 @@ class LocalFileBackend(FileBackend):
                 os.replace(source_path, destination_path)
             else:
                 os.link(source_path, destination_path)
-                source_path.unlink()
+                try:
+                    source_path.unlink()
+                except OSError:
+                    destination_path.unlink(missing_ok=True)
+                    raise
         except FileExistsError as exc:
             raise StorageAlreadyExistsError(f"Storage object already exists: {destination_key}") from exc
         except OSError as exc:

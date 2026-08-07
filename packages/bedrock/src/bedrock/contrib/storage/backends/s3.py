@@ -195,7 +195,13 @@ class S3FileBackend(FileBackend):
             return False
 
     def copy(self, source: str, destination: str, *, overwrite: bool = False) -> StoredFile:
-        """Copy an S3 object within this backend's configured bucket."""
+        """Copy an S3 object within this backend's configured bucket.
+
+        S3 has no destination-side conditional copy. When ``overwrite`` is
+        false, this method performs a preflight existence check, so a concurrent
+        writer can still create the destination between that check and copy.
+        Callers requiring strict create-only semantics must use :meth:`put`.
+        """
         source_key, source_provider_key = self._provider_key(source)
         destination_key, destination_provider_key = self._provider_key(destination)
         if not overwrite and self.exists(destination_key):

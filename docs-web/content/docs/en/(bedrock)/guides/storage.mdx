@@ -40,7 +40,7 @@ pip install 'bedrock-core[storage-s3]'
 
 Set `STORAGE_S3_BUCKET`; `STORAGE_S3_PREFIX`, `STORAGE_S3_REGION_NAME`, and `STORAGE_S3_ENDPOINT_URL` are optional. Credentials come from boto3's standard provider chain. Custom endpoints require HTTPS by default; set `STORAGE_S3_ALLOW_INSECURE_ENDPOINT=true` only for local development.
 
-S3 supports `get_signed_url(path, expires_in=3600)` for temporary download URLs. Those URLs and their signature parameters are never logged. `put(..., overwrite=False)` uses a provider-side conditional write. S3 copy and move are same-backend operations; move is copy followed by delete.
+S3 supports `get_signed_url(path, expires_in=3600)` for temporary download URLs. Those URLs and their signature parameters are never logged. `put(..., overwrite=False)` uses a provider-side conditional write. S3 copy and move are same-backend operations; move is copy followed by delete. S3 has no destination-side conditional copy: `copy(..., overwrite=False)` performs a preflight existence check and can still race with a concurrent writer. Use `put` when strict create-only behavior is required.
 
 ## Playbook
 

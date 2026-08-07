@@ -37,15 +37,17 @@ class StorageService:
         backend_cls = _BACKEND_REGISTRY.get(backend_name)
         if backend_cls is None:
             raise StorageConfigurationError(f"Failed to load storage backend '{backend_name}'.")
-        if self._backend is not None:
-            self._backend.close()
         try:
-            self._backend = backend_cls(settings=settings)
+            new_backend = backend_cls(settings=settings)
         except StorageError:
             raise
         except Exception as exc:
             raise StorageConfigurationError(f"Failed to configure storage backend '{backend_name}'.") from exc
-        return self._backend
+        previous_backend = self._backend
+        if previous_backend is not None:
+            previous_backend.close()
+        self._backend = new_backend
+        return new_backend
 
     def get_backend(self) -> FileBackend:
         """Return the selected backend, lazily configuring local storage."""

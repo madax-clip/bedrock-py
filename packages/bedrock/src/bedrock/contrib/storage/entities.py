@@ -23,8 +23,3 @@ class StoredFile(BedrockEntity):
     last_modified: datetime | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
     provider_metadata: dict[str, Any] = Field(default_factory=dict)
-
-    @property
-    def content_type(self) -> str | None:
-        """Return the legacy name for :attr:`mime_type`."""
-        return self.mime_type
