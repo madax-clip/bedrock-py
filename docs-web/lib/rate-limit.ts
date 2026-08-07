@@ -47,6 +47,16 @@ export type ChatBodyValidation =
   | { ok: false; status: number; code: string; message: string };
 
 /**
+ * Early rejection based on the declared content-length, before the body
+ * is read. The header can be forged, so the post-read check in
+ * parseAndValidateChatBody remains the authoritative bound.
+ */
+export function isDeclaredBodyTooLarge(req: Request): boolean {
+  const declared = Number(req.headers.get("content-length"));
+  return Number.isFinite(declared) && declared > RATE_LIMIT.MAX_BODY_BYTES;
+}
+
+/**
  * Validate and bound the chat request body before any model call:
  * request size, message count and estimated input tokens are all capped.
  */

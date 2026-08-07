@@ -77,8 +77,19 @@ export class TokenBudgetWindow {
 
   reserve(amount: number): ReserveResult {
     this.rollWindow();
-    const tokens = Math.max(0, Math.ceil(amount));
     const used = this.committed;
+    // Fail closed on non-finite input: a NaN/Infinity reservation would
+    // otherwise poison every comparison and disable the limit.
+    if (!Number.isFinite(amount)) {
+      return {
+        allowed: false,
+        reservationId: null,
+        used,
+        remaining: Math.max(0, RATE_LIMIT.TOKENS_PER_WINDOW - used),
+        resetAt: this.resetAt,
+      };
+    }
+    const tokens = Math.max(0, Math.ceil(amount));
     if (used + tokens > RATE_LIMIT.TOKENS_PER_WINDOW) {
       return {
         allowed: false,
@@ -111,7 +122,11 @@ export class TokenBudgetWindow {
     const reserved = this.outstanding.get(reservationId);
     if (reserved === undefined) return;
     this.outstanding.delete(reservationId);
-    this.settled += Math.max(0, Math.ceil(actualTokens));
+    // Fail conservative on non-finite input: charge the full reservation
+    // rather than letting NaN poison the settled balance.
+    this.settled += Number.isFinite(actualTokens)
+      ? Math.max(0, Math.ceil(actualTokens))
+      : reserved;
   }
 
   /** Charge the full reservation (used for aborted/errored streams). */

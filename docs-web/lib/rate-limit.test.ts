@@ -3,6 +3,7 @@ import { TokenBudgetWindow, RATE_LIMIT } from "./rate-limit-budget";
 import {
   estimateTokens,
   getClientIp,
+  isDeclaredBodyTooLarge,
   parseAndValidateChatBody,
   releaseBudget,
   reserveBudget,
@@ -105,6 +106,28 @@ describe("estimateTokens", () => {
     expect(estimateTokens("")).toBe(0);
     expect(estimateTokens("abcd")).toBe(1);
     expect(estimateTokens("abcde")).toBe(2);
+  });
+});
+
+describe("isDeclaredBodyTooLarge", () => {
+  it("rejects early when content-length exceeds the cap", () => {
+    expect(
+      isDeclaredBodyTooLarge(
+        reqWithHeaders({ "content-length": String(RATE_LIMIT.MAX_BODY_BYTES + 1) }),
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts missing, invalid, or in-limit content-length", () => {
+    expect(isDeclaredBodyTooLarge(reqWithHeaders({}))).toBe(false);
+    expect(
+      isDeclaredBodyTooLarge(reqWithHeaders({ "content-length": "not-a-number" })),
+    ).toBe(false);
+    expect(
+      isDeclaredBodyTooLarge(
+        reqWithHeaders({ "content-length": String(RATE_LIMIT.MAX_BODY_BYTES) }),
+      ),
+    ).toBe(false);
   });
 });
 

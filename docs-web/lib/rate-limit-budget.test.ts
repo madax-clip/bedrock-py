@@ -105,4 +105,23 @@ describe("TokenBudgetWindow", () => {
     expect(restored.committed).toBe(budget.committed);
     expect(restored.resetAt).toBe(budget.resetAt);
   });
+
+  it("fails closed on non-finite reserve amounts", () => {
+    const budget = makeBudget();
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      const result = budget.reserve(bad);
+      expect(result.allowed).toBe(false);
+      expect(result.reservationId).toBeNull();
+    }
+    expect(budget.committed).toBe(0);
+    // The limiter still works afterwards.
+    expect(budget.reserve(1_000).allowed).toBe(true);
+  });
+
+  it("charges the full reservation on non-finite settle amounts", () => {
+    const budget = makeBudget();
+    const { reservationId } = budget.reserve(8_000);
+    budget.settle(reservationId!, NaN);
+    expect(budget.committed).toBe(8_000);
+  });
 });

@@ -15,6 +15,7 @@ import {
   estimateTokens,
   forfeitBudget,
   getClientIp,
+  isDeclaredBodyTooLarge,
   parseAndValidateChatBody,
   releaseBudget,
   reserveBudget,
@@ -114,6 +115,16 @@ export async function POST(req: Request) {
     );
   }
 
+  if (isDeclaredBodyTooLarge(req)) {
+    return Response.json(
+      {
+        error: "body_too_large",
+        message: `Request body exceeds the ${RATE_LIMIT.MAX_BODY_BYTES} byte limit.`,
+      },
+      { status: 413 },
+    );
+  }
+
   const parsed = parseAndValidateChatBody(await req.text());
   if (!parsed.ok) {
     return Response.json(
@@ -191,13 +202,13 @@ export async function POST(req: Request) {
         })),
       ],
       toolChoice: "auto",
-      onFinish: async ({ usage }) => {
+      onFinish: async ({ totalUsage }) => {
         await finalize(() =>
           settleBudget(
             env.RATE_LIMITER,
             ip,
             reservationId,
-            (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
+            (totalUsage.inputTokens ?? 0) + (totalUsage.outputTokens ?? 0),
           ),
         );
       },
