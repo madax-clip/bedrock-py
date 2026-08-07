@@ -36,7 +36,7 @@ await metrics.agauge("queue.depth", 42)
 
 - **名称** 必须匹配 `^[a-zA-Z_][a-zA-Z0-9_.\-:]*$`（以字母或下划线开头，之后只能是字母、数字、`_`、`.`、`-`、`:`），默认最长 128 个字符。
 - **数值** 必须是 `int` 或 `float`（`bool` 会被拒绝）且有限 —— NaN/Inf 一律抛错。
-- **Tags** 是 `Mapping[str, str]`，使用前会被复制并规范化，provider 永远看不到也无法修改调用方的对象。默认限制：最多 20 个 tag，键最长 64 字符，值最长 128 字符。
+- **Tags** 是 `Mapping[str, str]`，使用前会被复制并规范化，provider 永远看不到也无法修改调用方的对象。tag 键必须满足与指标名相同的字符规则（`^[a-zA-Z_][a-zA-Z0-9_.\-:]*$`）。默认限制：最多 20 个 tag，键最长 64 字符，值最长 128 字符。
 
 非法输入会在记录日志或转发之前抛出 `MetricsValidationError`。
 
@@ -62,7 +62,7 @@ metrics.configure(settings=MetricsSettings(strict=True))
 
 指标绝不应破坏业务路径。当 provider 抛出异常时：
 
-- **fail-open（默认）**：服务记录一条脱敏警告，只包含指标上下文与异常*类型* —— 绝不记录异常消息、tag 值或任意对象 repr，因为它们可能携带凭证或无界内容。
+- **fail-open（默认）**：服务捕获**所有** provider 异常（包括 provider 抛出的 `MetricsValidationError`），记录一条脱敏警告，只包含指标上下文与异常*类型* —— 绝不记录异常消息、tag 值或任意对象 repr，因为它们可能携带凭证或无界内容。
 - **strict**（`strict=True`，面向测试与关键任务）：失败会抛出 `MetricsProviderError`。
 
 ## 编写 Provider

@@ -42,13 +42,13 @@ Same contract as `count`; `value` is required and may be negative.
 
 Async variants; provider dispatch runs via `asyncio.to_thread` unless the provider overrides the async methods.
 
-### `metrics.configure(provider=None, settings=None) -> MetricsProvider | None`
+### `metrics.configure(provider=..., settings=None) -> MetricsProvider | None`
 
-Attach a provider and/or replace settings. `configure()` with no args selects logging-only mode.
+Attach a provider and/or replace settings. Omitting `provider` keeps the currently configured provider (so `metrics.configure(settings=...)` is always safe); pass `provider=None` explicitly to detach the provider and return to logging-only mode.
 
 ### `metrics.close()` / `await metrics.aclose()`
 
-Close the provider and return to logging-only mode.
+Close the provider and return to logging-only mode. The provider is always detached, even if its `close()` raises; close failures follow the configured error policy (sanitized warning, or `MetricsProviderError` in strict mode).
 
 ## Configuration
 
@@ -62,7 +62,7 @@ metrics.configure(settings=MetricsSettings(strict=True))  # tests / critical pat
 
 ## Error Policy
 
-- **Fail-open (default)**: provider exceptions are logged as a sanitized warning (exception type only — never the exception message, tag values, or object reprs) and never reach the business path.
+- **Fail-open (default)**: **all** provider exceptions — including a provider-raised `MetricsValidationError` — are logged as a sanitized warning (exception type only — never the exception message, tag values, or object reprs) and never reach the business path.
 - **Strict** (`METRICS_STRICT=true` or `MetricsSettings(strict=True)`): provider failures raise `MetricsProviderError`.
 
 ## Writing a Provider

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping
+from typing import Any
 
 from ...logging import get_logger
 from .base import MetricsProvider
@@ -25,6 +26,9 @@ provider adapter can consume names without rewriting.
 _COUNT = "count"
 _GAUGE = "gauge"
 _NO_PROVIDER = "none"
+
+_UNSET: Any = object()
+"""Sentinel distinguishing an omitted ``configure()`` argument from explicit ``None``."""
 
 
 class MetricsService:
@@ -66,17 +70,18 @@ class MetricsService:
 
     def configure(
         self,
-        provider: MetricsProvider | None = None,
+        provider: MetricsProvider | None = _UNSET,
         settings: MetricsSettings | None = None,
     ) -> MetricsProvider | None:
         """Configure the service with a provider and/or new settings.
 
         Args:
-            provider: Provider instance to forward events to. ``None`` keeps or
-                selects the default logging-only mode.
+            provider: Provider instance to forward events to. When omitted, the
+                currently configured provider is kept unchanged; pass ``None``
+                explicitly to detach the provider and return to logging-only
+                mode.
             settings: Replacement settings instance. ``None`` keeps the current
                 settings.
-
         Returns:
             The configured provider, or ``None`` in logging-only mode.
 
@@ -85,6 +90,8 @@ class MetricsService:
         """
         if settings is not None:
             self._settings = settings
+        if provider is _UNSET:
+            return self._provider
         if provider is not None and not isinstance(provider, MetricsProvider):
             raise MetricsValidationError("Metrics provider must be a MetricsProvider instance.")
         self._provider = provider
@@ -127,16 +134,30 @@ class MetricsService:
         await self._invoke_async(_GAUGE, name, value, tags)
 
     def close(self) -> None:
-        """Close the configured provider and return to logging-only mode."""
-        if self._provider is not None:
-            self._provider.close()
-            self._provider = None
+        """Close the configured provider and return to logging-only mode.
+
+        The provider is detached before ``close()`` runs, so the service always
+        falls back to logging-only mode even when the provider's ``close()``
+        raises. Close failures follow the configured error policy: a sanitized
+        warning in fail-open mode, :class:`MetricsProviderError` in strict mode.
+        """
+        provider, self._provider = self._provider, None
+        if provider is None:
+            return
+        try:
+            provider.close()
+        except Exception as exc:
+            self._handle_close_error(provider, exc)
 
     async def aclose(self) -> None:
         """Asynchronous variant of :meth:`close`."""
-        if self._provider is not None:
-            await self._provider.aclose()
-            self._provider = None
+        provider, self._provider = self._provider, None
+        if provider is None:
+            return
+        try:
+            await provider.aclose()
+        except Exception as exc:
+            self._handle_close_error(provider, exc)
 
     # -- Internal ---------------------------------------------------------
 
@@ -200,6 +221,15 @@ class MetricsService:
             provider=provider_name,
         ).info("metrics invoke")
 
+    def _handle_close_error(self, provider: MetricsProvider, exc: Exception) -> None:
+        if self._settings.strict:
+            raise MetricsProviderError(f"Metrics provider '{provider.name}' failed to close.") from exc
+        # Same sanitization rule as invoke failures: type only, never the message.
+        logger.bind(
+            provider=provider.name,
+            error_type=f"{type(exc).__module__}.{type(exc).__qualname__}",
+        ).warning("metrics provider close failed")
+
     def _handle_provider_error(self, metric_type: str, name: str, exc: Exception) -> None:
         provider_name = self._provider.name if self._provider is not None else _NO_PROVIDER
         if self._settings.strict:
@@ -221,14 +251,18 @@ class MetricsService:
         self._log_invoke(metric_type, clean_name, clean_value, clean_tags)
         if self._provider is None:
             return
+        # Providers get their own copy of the tags: a misbehaving provider that
+        # mutates the mapping must not pollute the invoke log record, which
+        # loguru may serialize later on a background thread (``enqueue=True``).
+        provider_tags = dict(clean_tags)
         try:
             if metric_type == _COUNT:
-                self._provider.count(clean_name, clean_value, clean_tags)
+                self._provider.count(clean_name, clean_value, provider_tags)
             else:
-                self._provider.gauge(clean_name, clean_value, clean_tags)
-        except MetricsValidationError:
-            raise
+                self._provider.gauge(clean_name, clean_value, provider_tags)
         except Exception as exc:
+            # Fail-open covers every provider exception — including provider-raised
+            # MetricsValidationError — so provider failures never reach the caller.
             self._handle_provider_error(metric_type, clean_name, exc)
 
     async def _invoke_async(
@@ -240,13 +274,12 @@ class MetricsService:
         self._log_invoke(metric_type, clean_name, clean_value, clean_tags)
         if self._provider is None:
             return
+        provider_tags = dict(clean_tags)
         try:
             if metric_type == _COUNT:
-                await self._provider.acount(clean_name, clean_value, clean_tags)
+                await self._provider.acount(clean_name, clean_value, provider_tags)
             else:
-                await self._provider.agauge(clean_name, clean_value, clean_tags)
-        except MetricsValidationError:
-            raise
+                await self._provider.agauge(clean_name, clean_value, provider_tags)
         except Exception as exc:
             self._handle_provider_error(metric_type, clean_name, exc)
 

@@ -36,7 +36,7 @@ Every valid call emits exactly one structured log event (`metrics invoke`) carry
 
 - **Names** must match `^[a-zA-Z_][a-zA-Z0-9_.\-:]*$` (start with a letter or underscore; then letters, digits, `_`, `.`, `-`, `:`) and are limited to 128 characters by default.
 - **Values** must be `int` or `float` (`bool` is rejected) and finite — NaN/Inf always raise.
-- **Tags** are a `Mapping[str, str]` that is copied and normalized before use, so providers can never see or mutate the caller's object. Defaults: at most 20 tags, 64-character keys, 128-character values.
+- **Tags** are a `Mapping[str, str]` that is copied and normalized before use, so providers can never see or mutate the caller's object. Tag keys must match the same character rule as metric names (`^[a-zA-Z_][a-zA-Z0-9_.\-:]*$`). Defaults: at most 20 tags, 64-character keys, 128-character values.
 
 Invalid input raises `MetricsValidationError` before anything is logged or dispatched.
 
@@ -62,7 +62,7 @@ metrics.configure(settings=MetricsSettings(strict=True))
 
 Metrics must never break the business path. When a provider raises:
 
-- **Fail-open (default)**: the service logs a sanitized warning containing only the metric context and the exception *type* — never the exception message, tag values, or arbitrary object reprs, which could carry credentials or unbounded content.
+- **Fail-open (default)**: the service catches **every** provider exception (including a provider-raised `MetricsValidationError`) and logs a sanitized warning containing only the metric context and the exception *type* — never the exception message, tag values, or arbitrary object reprs, which could carry credentials or unbounded content.
 - **Strict** (`strict=True`, intended for tests and critical jobs): the failure raises `MetricsProviderError`.
 
 ## Writing a Provider
