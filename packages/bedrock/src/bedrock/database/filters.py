@@ -457,7 +457,7 @@ class Filter:
             raise BadFilterFormatError(f"Operator `{operator}` has unexpected arity {arity}.")
         except BadFilterFormatError:
             raise
-        except (AttributeError, OverflowError, TypeError, ValueError, SQLAlchemyError) as err:
+        except (AttributeError, OSError, OverflowError, TypeError, ValueError, SQLAlchemyError) as err:
             raise BadFilterFormatError("Invalid filter specification.") from err
 
 

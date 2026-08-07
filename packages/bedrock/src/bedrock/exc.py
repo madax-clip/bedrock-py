@@ -33,7 +33,7 @@ class BadFilterFormatError(FilterError):
 
 
 class FilterDepthExceededError(FilterError):
-    """Raised when the recursive depth of a filter tree exceeds BEDROCK_MAX_FILTER_DEPTH."""
+    """Raised when the recursive depth of a filter tree exceeds MAX_FILTER_DEPTH."""
 
     detail: str = "Filter depth exceeded."
 

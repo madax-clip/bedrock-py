@@ -314,6 +314,7 @@ class TestFilterInputValidation:
             {"field": 1, "op": "eq", "value": "fruit"},
             {"field": "name", "op": "fuzzy_search", "value": 1},
             {"field": "created_at", "op": "eq", "value": "not-a-date"},
+            {"field": "created_at", "op": "eq", "value": 10**18},
         ],
     )
     def test_malformed_filter_values_are_normalized(self, db_session, filter_specs):
