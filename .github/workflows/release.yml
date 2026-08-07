@@ -25,19 +25,23 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --package bedrock-core --locked
+        run: uv sync --all-packages --locked
 
-      - name: Validate version tag
+      - name: Validate package versions against tag
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(uv run python -c "import importlib.metadata; print(importlib.metadata.version('bedrock-core'))")
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "::error::Tag version ($TAG_VERSION) does not match package version ($PKG_VERSION)"
-            exit 1
-          fi
+          for PACKAGE in bedrock-core bedrock-cli; do
+            PKG_VERSION=$(uv run python -c "import importlib.metadata; print(importlib.metadata.version('$PACKAGE'))")
+            if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+              echo "::error::Tag version ($TAG_VERSION) does not match $PACKAGE version ($PKG_VERSION)"
+              exit 1
+            fi
+          done
 
-      - name: Build package
-        run: uv build --package bedrock-core
+      - name: Build packages
+        run: |
+          uv build --package bedrock-core
+          uv build --package bedrock-cli
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -79,17 +83,23 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Extract release notes
+      - name: Resolve release notes
+        id: release-notes
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          sed -n "/^## \[$VERSION\]/,/^## \[/p" CHANGELOG.md \
-            | sed '1d;$d' \
-            > release_notes.md
+          NOTES_FILE="release-notes/${VERSION}.md"
+          if [ ! -f "$NOTES_FILE" ]; then
+            echo "::error::Release notes not found: $NOTES_FILE"
+            exit 1
+          fi
+          echo "path=$NOTES_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
-          files: dist/*
-          body_path: release_notes.md
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+          body_path: ${{ steps.release-notes.outputs.path }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

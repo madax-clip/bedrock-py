@@ -30,15 +30,17 @@ Bedrock 支持多种 Python 包管理器。选择最适合你工作流的那一�
 
 Bedrock 提供了可选依赖组，以支持更多后端：
 
-<Tabs items={['Redis Cache', 'Memcached Cache']}>
-  <Tab value="Redis Cache"><CodeBlock code={'uv add bedrock[cache-redis]'} lang={'bash'} /></Tab>
-
-
+<Tabs items={['Redis Cache', 'S3 Storage']}>
+  <Tab value="Redis Cache"><CodeBlock code={'uv add bedrock-core[cache-redis]'} lang={'bash'} /></Tab>
+  <Tab value="S3 Storage"><CodeBlock code={'uv add bedrock-core[storage-s3]'} lang={'bash'} /></Tab>
 </Tabs>
 
 | 扩展 | 包 | 说明 |
 |-------|----------|-------------|
 | `cache-redis` | `redis>=4.2.0` | 基于 Redis 的分布式缓存 |
+| `storage-s3` | `boto3>=1.35.0` | S3 兼容对象存储 |
+
+local storage backend 无需额外依赖；配置 S3 backend 前请先安装 `storage-s3`。
 
 ## Bedrock CLI（脚手架工具）
 

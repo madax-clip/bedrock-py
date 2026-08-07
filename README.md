@@ -6,7 +6,8 @@ Framework-agnostic core — no HTTP dependency in the runtime.
 
 ## Status
 
-**Early-stage (0.1.0).** The core runtime works and is under active development, but APIs may change.
+**0.2.1 release line.** The core runtime is under active development; the storage and metrics contracts below are
+stable within the 0.2 line.
 
 What exists today:
 
@@ -15,6 +16,8 @@ What exists today:
 - Hook system for structured call/response extension points (sync, async, robust)
 - SQLAlchemy 2.0 database layer with Alembic migrations
 - Cache system with memory and Redis.
+- Synchronous local and S3 object storage via `bedrock.contrib.storage`
+- Structured count/gauge metrics with a provider extension point via `bedrock.contrib.metrics`
 - Signal/event system (inspired by Blinker)
 - Typer-based CLI for module and database management
 - Utility library (lazy loading, introspection)
@@ -62,7 +65,7 @@ This repository is a `uv` workspace:
 ```
 packages/
 ├── bedrock/           # Core runtime
-└──bedrock-cli/       # Scaffolding CLI (early, 0.0.1)
+└── bedrock-cli/       # Scaffolding CLI
 ```
 
 ## Core runtime (`packages/bedrock`)
@@ -244,6 +247,16 @@ bedrock run <module> <command>  # Execute module-specific CLI
 
 **Optional:**
 - `redis` — Redis cache backend (`uv add bedrock-core[cache-redis]`)
+- `boto3` — S3 storage backend (`uv add bedrock-core[storage-s3]`)
+
+## Stable contrib APIs in 0.2.1
+
+`bedrock.contrib.storage` provides synchronous `put`, `head`, `download`, `stream`, `copy`, `mv`, `delete`, and
+`get_signed_url` operations. Local storage needs no extra; install `storage-s3` before selecting the S3 backend.
+
+`bedrock.contrib.metrics` provides stateless `count` and `gauge` events with optional `MetricsProvider` forwarding.
+It intentionally does not include Prometheus, OpenTelemetry, or StatsD exporters. See the documentation site for
+configuration, input limits, and the complete compatibility notes.
 
 ## Architecture principles
 
