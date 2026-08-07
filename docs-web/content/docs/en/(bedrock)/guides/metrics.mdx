@@ -1,0 +1,91 @@
+---
+title: Metrics
+description: Lightweight count/gauge metrics with structured logging and a provider ABC extension point
+---
+
+Bedrock ships a lightweight metrics module under `bedrock.contrib.metrics`. It records `count` and `gauge` calls as structured log events and forwards them to an optional provider. No Prometheus/OpenTelemetry/StatsD exporter ships in this version — the `MetricsProvider` ABC is the stable extension point for future adapters.
+
+## Quick Start
+
+```python
+from bedrock.contrib.metrics import metrics
+
+# Counter increment event (default value=1)
+metrics.count("orders.created", tags={"channel": "web"})
+
+# Gauge observation of the current value
+metrics.gauge("queue.depth", 42)
+
+# Async variants
+await metrics.acount("orders.created")
+await metrics.agauge("queue.depth", 42)
+```
+
+The service works with zero configuration: without a provider every call is validated and logged, nothing is forwarded.
+
+## Semantics
+
+The service is **stateless** — it keeps no counters or gauge history in-process:
+
+- `count(name, value=1, tags=None)` — an increment **event**. `value` must be a finite, non-negative `int`/`float`.
+- `gauge(name, value, tags=None)` — an **observation** of the current value. `value` must be finite but may be negative.
+
+Every valid call emits exactly one structured log event (`metrics invoke`) carrying `metric_type`, `metric_name`, `value`, normalized `tags`, and `provider` as queryable fields — never an unqueryable concatenated string.
+
+## Validation Rules
+
+- **Names** must match `^[a-zA-Z_][a-zA-Z0-9_.\-:]*$` (start with a letter or underscore; then letters, digits, `_`, `.`, `-`, `:`) and are limited to 128 characters by default.
+- **Values** must be `int` or `float` (`bool` is rejected) and finite — NaN/Inf always raise.
+- **Tags** are a `Mapping[str, str]` that is copied and normalized before use, so providers can never see or mutate the caller's object. Defaults: at most 20 tags, 64-character keys, 128-character values.
+
+Invalid input raises `MetricsValidationError` before anything is logged or dispatched.
+
+## Configuration
+
+`MetricsSettings` reads environment variables with the `METRICS_` prefix:
+
+| Setting | Env var | Default | Purpose |
+|---------|---------|---------|---------|
+| `strict` | `METRICS_STRICT` | `false` | Raise `MetricsProviderError` on provider failure |
+| `max_name_length` | `METRICS_MAX_NAME_LENGTH` | `128` | Metric name length limit |
+| `max_tags` | `METRICS_MAX_TAGS` | `20` | Tag count limit per call |
+| `max_tag_key_length` | `METRICS_MAX_TAG_KEY_LENGTH` | `64` | Tag key length limit |
+| `max_tag_value_length` | `METRICS_MAX_TAG_VALUE_LENGTH` | `128` | Tag value length limit |
+
+```python
+from bedrock.contrib.metrics import metrics, MetricsSettings
+
+metrics.configure(settings=MetricsSettings(strict=True))
+```
+
+## Error Policy: Fail-Open by Default
+
+Metrics must never break the business path. When a provider raises:
+
+- **Fail-open (default)**: the service logs a sanitized warning containing only the metric context and the exception *type* — never the exception message, tag values, or arbitrary object reprs, which could carry credentials or unbounded content.
+- **Strict** (`strict=True`, intended for tests and critical jobs): the failure raises `MetricsProviderError`.
+
+## Writing a Provider
+
+```python
+from collections.abc import Mapping
+
+from bedrock.contrib.metrics import MetricsProvider, metrics
+
+
+class StdoutProvider(MetricsProvider):
+    def count(self, name: str, value: int | float = 1, tags: Mapping[str, str] | None = None) -> None:
+        print("count", name, value, dict(tags or {}))
+
+    def gauge(self, name: str, value: int | float, tags: Mapping[str, str] | None = None) -> None:
+        print("gauge", name, value, dict(tags or {}))
+
+
+metrics.configure(StdoutProvider())
+```
+
+`MetricsProvider` is a real `abc.ABC` and cannot be instantiated without implementing `count` and `gauge`. The async methods `acount`/`agauge` default to running the sync implementation via `asyncio.to_thread`, so blocking exporters do not stall the event loop — override them if you have a native async client. `close()`/`aclose()` are optional no-op lifecycle hooks called by `metrics.close()` / `metrics.aclose()`. Override the `name` property to control the provider label recorded in log events.
+
+## Cardinality Safety
+
+Keep tag values low-cardinality (`channel=web`, not `user_id=...`). Metric names and tags flow into logs and, eventually, time-series backends where unbounded cardinality is a memory and cost hazard. The configured limits reject abusive payloads, but semantic cardinality discipline is up to you.

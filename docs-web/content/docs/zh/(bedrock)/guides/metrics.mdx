@@ -1,0 +1,91 @@
+---
+title: 指标
+description: 轻量 count/gauge 指标，带结构化日志与 Provider ABC 扩展点
+---
+
+Bedrock 在 `bedrock.contrib.metrics` 下提供轻量指标模块。它将 `count` 与 `gauge` 调用记录为结构化日志事件，并可选择转发给 provider。本版本不附带 Prometheus/OpenTelemetry/StatsD exporter —— `MetricsProvider` ABC 是为未来 adapter 准备的稳定扩展点。
+
+## 快速开始
+
+```python
+from bedrock.contrib.metrics import metrics
+
+# 计数器增量事件（默认 value=1）
+metrics.count("orders.created", tags={"channel": "web"})
+
+# 当前值的 gauge 观测
+metrics.gauge("queue.depth", 42)
+
+# 异步变体
+await metrics.acount("orders.created")
+await metrics.agauge("queue.depth", 42)
+```
+
+服务零配置即可工作：没有 provider 时，每次调用只会被校验并记录日志，不做任何转发。
+
+## 语义
+
+服务是**无状态的** —— 进程内不保存任何 counter 或 gauge 历史：
+
+- `count(name, value=1, tags=None)` —— 一次增量**事件**。`value` 必须是有限的非负 `int`/`float`。
+- `gauge(name, value, tags=None)` —— 对当前值的一次**观测**。`value` 必须有限，但可以为负。
+
+每一次合法调用恰好产生一条结构化日志事件（`metrics invoke`），其中 `metric_type`、`metric_name`、`value`、规范化后的 `tags` 与 `provider` 都是可查询字段 —— 而不是不可查询的拼接文本。
+
+## 校验规则
+
+- **名称** 必须匹配 `^[a-zA-Z_][a-zA-Z0-9_.\-:]*$`（以字母或下划线开头，之后只能是字母、数字、`_`、`.`、`-`、`:`），默认最长 128 个字符。
+- **数值** 必须是 `int` 或 `float`（`bool` 会被拒绝）且有限 —— NaN/Inf 一律抛错。
+- **Tags** 是 `Mapping[str, str]`，使用前会被复制并规范化，provider 永远看不到也无法修改调用方的对象。默认限制：最多 20 个 tag，键最长 64 字符，值最长 128 字符。
+
+非法输入会在记录日志或转发之前抛出 `MetricsValidationError`。
+
+## 配置
+
+`MetricsSettings` 读取 `METRICS_` 前缀的环境变量：
+
+| 设置 | 环境变量 | 默认值 | 用途 |
+|------|----------|--------|------|
+| `strict` | `METRICS_STRICT` | `false` | provider 失败时抛出 `MetricsProviderError` |
+| `max_name_length` | `METRICS_MAX_NAME_LENGTH` | `128` | 指标名长度上限 |
+| `max_tags` | `METRICS_MAX_TAGS` | `20` | 单次调用 tag 数量上限 |
+| `max_tag_key_length` | `METRICS_MAX_TAG_KEY_LENGTH` | `64` | tag 键长度上限 |
+| `max_tag_value_length` | `METRICS_MAX_TAG_VALUE_LENGTH` | `128` | tag 值长度上限 |
+
+```python
+from bedrock.contrib.metrics import metrics, MetricsSettings
+
+metrics.configure(settings=MetricsSettings(strict=True))
+```
+
+## 错误策略：默认 fail-open
+
+指标绝不应破坏业务路径。当 provider 抛出异常时：
+
+- **fail-open（默认）**：服务记录一条脱敏警告，只包含指标上下文与异常*类型* —— 绝不记录异常消息、tag 值或任意对象 repr，因为它们可能携带凭证或无界内容。
+- **strict**（`strict=True`，面向测试与关键任务）：失败会抛出 `MetricsProviderError`。
+
+## 编写 Provider
+
+```python
+from collections.abc import Mapping
+
+from bedrock.contrib.metrics import MetricsProvider, metrics
+
+
+class StdoutProvider(MetricsProvider):
+    def count(self, name: str, value: int | float = 1, tags: Mapping[str, str] | None = None) -> None:
+        print("count", name, value, dict(tags or {}))
+
+    def gauge(self, name: str, value: int | float, tags: Mapping[str, str] | None = None) -> None:
+        print("gauge", name, value, dict(tags or {}))
+
+
+metrics.configure(StdoutProvider())
+```
+
+`MetricsProvider` 是真正的 `abc.ABC`，不实现 `count` 与 `gauge` 就无法实例化。异步方法 `acount`/`agauge` 默认通过 `asyncio.to_thread` 在线程中运行同步实现，阻塞式 exporter 不会卡住事件循环 —— 如果有原生异步客户端请覆写它们。`close()`/`aclose()` 是可选的空生命周期钩子，由 `metrics.close()` / `metrics.aclose()` 调用。覆写 `name` 属性可以控制日志事件中记录的 provider 名称。
+
+## Cardinality 安全建议
+
+tag 值请保持低基数（例如 `channel=web`，而不是 `user_id=...`）。指标名与 tag 会进入日志，未来还会进入时序后端 —— 无界的 cardinality 是内存与成本隐患。配置的上限能拦截滥用载荷，但语义层面的 cardinality 纪律需要你自己遵守。

@@ -1,0 +1,3 @@
+title: Bedrock Metrics
+description: Lightweight count/gauge metrics with structured logging and a provider ABC extension point.
+version: "0.1.0"
