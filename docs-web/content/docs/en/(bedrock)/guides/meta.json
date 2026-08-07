@@ -9,6 +9,7 @@
     "database",
     "cache",
     "metrics",
+    "storage",
     "signals",
     "di",
     "hooks"

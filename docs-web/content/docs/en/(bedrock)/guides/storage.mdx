@@ -1,0 +1,47 @@
+---
+title: Storage
+description: Safe synchronous local and S3 object storage.
+---
+
+`bedrock.contrib.storage` exposes a synchronous, provider-neutral API for complete objects and bounded streaming. It supports local storage without optional dependencies and S3 through the `storage-s3` extra.
+
+## Operations and metadata
+
+```python
+from bedrock.contrib.storage import storage
+
+storage.configure("local")
+stored = storage.put("avatars/42.png", image_bytes, mime_type="image/png")
+metadata = storage.head(stored.key)
+assert metadata.size == len(image_bytes)
+assert metadata.mime_type == "image/png"
+assert b"".join(storage.stream(stored.key, chunk_size=64 * 1024)) == image_bytes
+
+storage.copy(stored.key, "avatars/42-copy.png")
+storage.mv("avatars/42-copy.png", "archive/42.png")
+storage.delete(stored.key)
+```
+
+`head` and `put` return `StoredFile`: `key`, `mime_type`, `size`, `etag`, `checksum`, `last_modified`, user `metadata`, and JSON-compatible `provider_metadata`. The latter carries safe backend extensions only; it never contains content, credentials, signing headers, or sensitive configuration.
+
+All paths are relative POSIX keys. Empty keys, absolute paths, backslashes, NUL bytes, and `.` or `..` segments are rejected. The local backend also prevents existing symlink parents from escaping its root. `put(..., overwrite=False)` uses atomic creation.
+
+## Local storage
+
+Local is the default and has no extra dependency. Configure `STORAGE_LOCAL_ROOT` to change its root. `stream` returns a synchronous `Iterable[bytes]`; it opens and closes the underlying file as the iterable is consumed. Local storage deliberately raises `StorageUnsupportedOperationError` for `get_signed_url`: `file://` URLs are neither portable nor safe to expose as an application API.
+
+## S3 storage
+
+Install S3 support:
+
+```bash
+pip install 'bedrock-core[storage-s3]'
+```
+
+Set `STORAGE_S3_BUCKET`; `STORAGE_S3_PREFIX`, `STORAGE_S3_REGION_NAME`, and `STORAGE_S3_ENDPOINT_URL` are optional. Credentials come from boto3's standard provider chain. Custom endpoints require HTTPS by default; set `STORAGE_S3_ALLOW_INSECURE_ENDPOINT=true` only for local development.
+
+S3 supports `get_signed_url(path, expires_in=3600)` for temporary download URLs. Those URLs and their signature parameters are never logged. `put(..., overwrite=False)` uses a provider-side conditional write. S3 copy and move are same-backend operations; move is copy followed by delete.
+
+## Playbook
+
+Use `download` only when the complete object safely fits in memory. Use `stream` for larger reads. This module does not include multipart upload, directory listing, public URL configuration, version management, or cross-backend transfers.
