@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `contrib.storage` with synchronous local and S3 storage backends.
+- Added `contrib.metrics` with count and gauge services plus the Provider ABC.
 - Storage and metrics contrib APIs are documented as stable public contracts. See
   [`release-notes/0.2.1.md`](release-notes/0.2.1.md) for upgrade guidance, optional extras, and known limits.
 
