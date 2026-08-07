@@ -8,6 +8,7 @@
     "cli",
     "database",
     "cache",
+    "metrics",
     "signals",
     "di",
     "hooks"
